@@ -1,8 +1,8 @@
 //! # curve.rs
 
 #![allow(unexpected_cfgs)]
-use ark_ff::fields::{Fp256, MontBackend, MontConfig};
 use ark_ff::PrimeField;
+use ark_ff::fields::{Fp256, MontBackend, MontConfig};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -147,9 +147,9 @@ mod unit_test {
     use ark_std::rand::thread_rng;
     use xs233_sys::{xsk233_add, xsk233_equals, xsk233_generator, xsk233_neutral};
 
-    use crate::curve::{point_scalar_mul, CurvePoint};
+    use crate::curve::{CurvePoint, point_scalar_mul};
 
-    use super::{multi_scalar_mul, Fr};
+    use super::{Fr, multi_scalar_mul};
 
     #[test]
     fn test_validate_psm_with_point_add() {

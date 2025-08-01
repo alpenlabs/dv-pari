@@ -2,17 +2,17 @@
 //!
 use crate::artifacts::{
     BAR_WTS, BAR_WTSD, L_TAU, L_TAUD, L_TAUL, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1,
-    SRS_G_K_2, SRS_G_M, SRS_G_Q, TREE_2N, TREE_2ND, TREE_N, TREE_ND, Z_POLY, Z_POLYD, Z_VALS2D_INV,
-    Z_VALS2_INV,
+    SRS_G_K_2, SRS_G_M, SRS_G_Q, TREE_2N, TREE_2ND, TREE_N, TREE_ND, Z_POLY, Z_POLYD, Z_VALS2_INV,
+    Z_VALS2D_INV,
 };
-use crate::curve::{multi_scalar_mul, point_scalar_mul_gen, CurvePoint, Fr};
+use crate::curve::{CurvePoint, Fr, multi_scalar_mul, point_scalar_mul_gen};
 use crate::ec_fft::{
     build_sect_ecfft_tree, evaluate_all_lagrange_coeffs_ecfft_with_vanish,
     evaluate_lagrage_over_unified_domain, evaluate_lagrage_over_unified_domain_with_precompute,
     evaluate_lagrange_coeffs_using_precompute, evaluate_vanishing_poly_over_domain,
     get_both_domains,
 };
-use crate::gnark_r1cs::{load_sparse_r1cs_from_file, R1CSInstance, Row};
+use crate::gnark_r1cs::{R1CSInstance, Row, load_sparse_r1cs_from_file};
 use crate::io_utils::{
     read_fr_vec_from_file, read_point_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file,
 };
@@ -20,11 +20,11 @@ use crate::proving::{Proof, Transcript};
 use crate::tree_io::{read_fftree_from_file, read_minimal_fftree_from_file, write_fftree_to_file};
 use anyhow::{Context, Result};
 use ark_ff::{Field, One, UniformRand, Zero};
-use ark_poly::univariate::DensePolynomial;
 use ark_poly::Polynomial;
+use ark_poly::univariate::DensePolynomial;
 use ark_std::{rand::Rng, vec::Vec};
-use ecfft::utils::BinaryTree;
 use ecfft::FFTree;
+use ecfft::utils::BinaryTree;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::fs::File;
 use std::path::Path;

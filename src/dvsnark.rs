@@ -3,7 +3,7 @@ mod unit_tests {
 
     use crate::artifacts::{R1CS_CONSTRAINTS_FILE, R1CS_WITNESS_FILE};
     use crate::curve::Fr;
-    use crate::proving::{prover_prepares_precomputes, Proof};
+    use crate::proving::{Proof, prover_prepares_precomputes};
     use anyhow::Context;
     use ark_ff::Field;
     use ark_std::vec::Vec;

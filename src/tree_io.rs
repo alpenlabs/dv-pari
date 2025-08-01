@@ -1,4 +1,4 @@
-//! High-performance I/O for ecfft::fftree::FFTree<F>
+//! High-performance I/O for ecfft::fftree::FFTree
 //!
 //! Format (little-endian):
 //! ┌── FileHeader (8 B magic + 8 B total_len) ──────────────────────────┐
@@ -14,7 +14,7 @@
 //! written with the *same* layout.  Deserialiser recurses and spawns
 //! Rayon tasks at every level.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use ark_ff::Field;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use ecfft::{

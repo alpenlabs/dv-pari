@@ -4,7 +4,7 @@ use crate::artifacts::{
     BAR_WTS, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1, SRS_G_K_2, SRS_G_M, SRS_G_Q, TREE_2N,
     Z_POLY, Z_VALS2_INV,
 };
-use crate::curve::{multi_scalar_mul, CompressedCurvePoint, CurvePoint, Fr};
+use crate::curve::{CompressedCurvePoint, CurvePoint, Fr, multi_scalar_mul};
 use crate::ec_fft::{
     build_sect_ecfft_tree, evaluate_at_alpha_from_barycentric_weights, get_both_domains,
 };

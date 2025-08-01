@@ -2,14 +2,14 @@ use crate::curve::Fr;
 use ark_ff::AdditiveGroup;
 use ark_ff::Field;
 use ark_ff::Zero;
-use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
+use ark_poly::univariate::DensePolynomial;
 use ark_std::str::FromStr;
+use ecfft::FFTree;
 use ecfft::ec::Point;
 use ecfft::ec::ShortWeierstrassCurve;
 use ecfft::utils::two_adicity;
-use ecfft::FFTree;
 use num_bigint::BigUint;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefMutIterator;
@@ -287,7 +287,10 @@ pub(crate) fn evaluate_all_lagrange_coeffs_ecfft_with_vanish(
         if z_s_prime_evals_on_s[i].is_zero() {
             // This implies a repeated root in S if domain_points_s were distinct,
             // or an issue with derivative calculation/evaluation.
-            return Err(format!("Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.", i, i, domain_points_s[i]));
+            return Err(format!(
+                "Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.",
+                i, i, domain_points_s[i]
+            ));
         }
         denominators.push(tau_minus_s_i * z_s_prime_evals_on_s[i]);
     }
@@ -355,7 +358,10 @@ pub(crate) fn evaluate_lagrange_coeffs_using_precompute(
         if z_s_prime_evals_on_s[i].is_zero() {
             // This implies a repeated root in S if domain_points_s were distinct,
             // or an issue with derivative calculation/evaluation.
-            return Err(format!("Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.", i, i, domain_points_s[i]));
+            return Err(format!(
+                "Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.",
+                i, i, domain_points_s[i]
+            ));
         }
         denominators.push(tau_minus_s_i * z_s_prime_evals_on_s[i]);
     }
@@ -436,7 +442,10 @@ pub(crate) fn compute_bar_wts_using_precompute(
         if z_s_prime_evals_on_s[i].is_zero() {
             // This implies a repeated root in S if domain_points_s were distinct,
             // or an issue with derivative calculation/evaluation.
-            return Err(format!("Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.", i, i, domain_points_s[i]));
+            return Err(format!(
+                "Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.",
+                i, i, domain_points_s[i]
+            ));
         }
         denominators.push(tau_minus_s_i * z_s_prime_evals_on_s[i]);
     }
@@ -753,7 +762,7 @@ mod test {
     use ark_ff::{Field, One, UniformRand};
     use ark_poly::univariate::DensePolynomial;
     use ark_poly::{DenseUVPolynomial, Polynomial};
-    use ark_std::rand::{thread_rng, SeedableRng};
+    use ark_std::rand::{SeedableRng, thread_rng};
     use ecfft::FFTree;
     use rand_chacha::ChaCha20Rng;
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};

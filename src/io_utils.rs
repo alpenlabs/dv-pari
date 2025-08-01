@@ -164,10 +164,10 @@ pub(crate) fn read_fr_vec_from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<V
 
     if points.len() != len {
         return Err(anyhow::anyhow!(
-        "Deserialization (mmap, compressed) resulted in incorrect number of points. Expected {}, got {}.",
-        len,
-        points.len()
-    ));
+            "Deserialization (mmap, compressed) resulted in incorrect number of points. Expected {}, got {}.",
+            len,
+            points.len()
+        ));
     }
 
     Ok(points)
@@ -228,10 +228,10 @@ pub(crate) fn read_point_vec_from_file<P: AsRef<Path>>(path: P) -> anyhow::Resul
 
     if points.len() != len {
         return Err(anyhow::anyhow!(
-        "Deserialization (mmap, compressed) resulted in incorrect number of points. Expected {}, got {}.",
-        len,
-        points.len()
-    ));
+            "Deserialization (mmap, compressed) resulted in incorrect number of points. Expected {}, got {}.",
+            len,
+            points.len()
+        ));
     }
 
     Ok(points)

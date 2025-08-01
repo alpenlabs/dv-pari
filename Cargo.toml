@@ -1,12 +1,12 @@
 [package]
-name = "dv-pari" # CHANGEME
-version = "0.0.0" # CHANGEME
-edition = "2024" # CHANGEME
+name = "dv-pari" 
+version = "0.1.0" 
+edition = "2024" 
 authors = [
   "John Doe <noreply@alpenlabs.io>",  # CHANGEME
   "Janet Doe <noreply@alpenlabs.io>", # CHANGEME
 ]
-description = "Alpen Rust Template" # CHANGEME
+description = "Rust implementation of the DV-Pari SNARK over sect233k1"
 license = "MIT OR Apache-2.0" # CHANGEME
 readme = "README.md"
 repository = "https://github.com/alpenlabs/rust-template" # CHANGEME

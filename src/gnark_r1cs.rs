@@ -327,7 +327,7 @@ impl R1CSInstance {
             }
 
             let mut increasing_power_of_d = *dom_i; // start with d^1
-                                                    //for j in 0..num_public_inputs {
+            //for j in 0..num_public_inputs {
             for (j, pub_wire_id) in pub_inputs_wire_id
                 .iter()
                 .enumerate()
@@ -404,8 +404,8 @@ mod test {
 
     use crate::gnark_r1cs::load_witness_from_file;
     use crate::gnark_r1cs::{
-        gnark_element_to_fr, load_sparse_r1cs_from_file, sparse_verify_r1cs::check_row, ReadFrom,
-        Vector,
+        ReadFrom, Vector, gnark_element_to_fr, load_sparse_r1cs_from_file,
+        sparse_verify_r1cs::check_row,
     };
 
     use crate::curve::Fr;
@@ -472,7 +472,7 @@ mod test {
         let wit_fr: Vec<Fr> = load_witness_from_file(&format!("srs_secu/{R1CS_WITNESS_FILE}"));
 
         assert_eq!(res_fr, wit_fr[2].into()); // should be equal to the witness that is expected by R1CS
-                                              // In this way we ensure verifier can validate bridge public inputs (e.g. deposit_index) with r1cs constraints
+        // In this way we ensure verifier can validate bridge public inputs (e.g. deposit_index) with r1cs constraints
 
         // [1, 7527402554317099476086310993202889463751940730940407143885949231928, 19542051593079647282099705468191403958371264520862632234952945594121,
     }
