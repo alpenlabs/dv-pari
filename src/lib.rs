@@ -1,4 +1,4 @@
-//! # lib.rs
+//! dv-pari library
 
 pub(crate) mod artifacts;
 pub(crate) mod dvsnark_test;

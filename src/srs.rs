@@ -1,4 +1,4 @@
-//! srs.rs
+//! Setup Phase and Proof Verification
 //!
 use crate::artifacts::{
     BAR_WTS, BAR_WTSD, L_TAU, L_TAUD, L_TAUL, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1,
@@ -12,7 +12,9 @@ use crate::ec_fft::{
     evaluate_lagrange_coeffs_using_precompute, evaluate_vanishing_poly_over_domain,
     get_both_domains,
 };
-use crate::gnark_r1cs::{R1CSInstance, Row, load_sparse_r1cs_from_file};
+use crate::gnark_r1cs::{
+    R1CSInstance, Row, evaluate_monomial_basis_poly, load_sparse_r1cs_from_file,
+};
 use crate::io_utils::{
     read_fr_vec_from_file, read_point_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file,
 };
@@ -593,7 +595,7 @@ impl SRS {
             transcript.output()
         };
 
-        let i0 = public_inputs[1] * fs_challenge_alpha + public_inputs[0];
+        let i0 = evaluate_monomial_basis_poly(public_inputs, fs_challenge_alpha);
 
         let r0 = proof.a0 * proof.b0 - i0;
         // Step 3. Compute u₀ and v₀

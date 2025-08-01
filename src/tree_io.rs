@@ -1,4 +1,4 @@
-//! High-performance I/O for ecfft::fftree::FFTree
+//! Fast I/O for ecfft::fftree::FFTree
 //!
 //! Format (little-endian):
 //! ┌── FileHeader (8 B magic + 8 B total_len) ──────────────────────────┐

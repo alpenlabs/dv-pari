@@ -354,6 +354,16 @@ impl R1CSInstance {
     }
 }
 
+pub(crate) fn evaluate_monomial_basis_poly(public_inputs: &[Fr], alpha: Fr) -> Fr {
+    let mut increasing_power_of_alpha = Fr::ONE;
+    let mut running_accumulator = Fr::ZERO;
+    for pubin in public_inputs {
+        running_accumulator += pubin * &increasing_power_of_alpha;
+        increasing_power_of_alpha *= alpha; // [1, alpha, alpha^2, .., alpha^{num_public_inputs-1}]
+    }
+    running_accumulator
+}
+
 #[cfg(test)]
 use byteorder::WriteBytesExt;
 
