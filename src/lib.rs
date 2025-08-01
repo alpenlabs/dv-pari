@@ -1,7 +1,7 @@
 //! # lib.rs
 
 pub(crate) mod artifacts;
-pub(crate) mod dvsnark;
+pub(crate) mod dvsnark_test;
 pub(crate) mod ec_fft;
 pub(crate) mod io_utils;
 pub(crate) mod tree_io;

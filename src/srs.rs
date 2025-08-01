@@ -32,19 +32,19 @@ use std::path::Path;
 /// Structured Reference String
 #[derive(Clone, Debug)]
 pub struct SRS {
-    /// g_m
-    pub g_m: Vec<CurvePoint>, // num_inputs bases  ε·m_j(τ,δ)·G
-    /// g_q
-    pub g_q: Vec<CurvePoint>, // num_constraints bases  ε·z(τ)·L_i(τ)·G
-    /// g_k
-    pub g_k: [Vec<CurvePoint>; 3], // four degree‑(m−1) bases  L_i(τ)·δ^j·G
+    /// g_m ε·m_j(τ,δ)·G
+    pub g_m: Vec<CurvePoint>, // num_inputs bases
+    /// g_q ε·z(τ)·L_i(τ)·G
+    pub g_q: Vec<CurvePoint>, // num_constraints bases
+    /// g_k L_i(τ)·δ^j·G
+    pub g_k: [Vec<CurvePoint>; 3], // three degree‑(m−1) bases
 }
 
-/// Trapdoor
+/// Trapdoor only known to the verifier
 #[derive(Clone, Debug, Copy)]
 pub struct Trapdoor {
     /// tau
-    pub tau: Fr, // trapdoor (only known to verifier)
+    pub tau: Fr,
     /// delta
     pub delta: Fr,
     /// epsilon

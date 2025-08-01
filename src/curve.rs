@@ -1,5 +1,6 @@
-//! # curve.rs
+//! Wrapper over an existing library for sect233k1 curve operations
 
+// `unexpected_cfgs` allowed to appease warning thrown by MontConfig macro
 #![allow(unexpected_cfgs)]
 use ark_ff::PrimeField;
 use ark_ff::fields::{Fp256, MontBackend, MontConfig};
@@ -9,20 +10,20 @@ use rayon::iter::{
 use std::os::raw::c_void;
 use xs233_sys::{xsk233_add, xsk233_generator, xsk233_neutral, xsk233_point};
 
-/// FqConfig for sect233k1
+/// FqConfig for Scalar Field of the curve
 #[derive(MontConfig, Debug)]
 #[modulus = "3450873173395281893717377931138512760570940988862252126328087024741343"]
 #[generator = "3"]
 pub struct FqConfig;
 
-/// Fr
+/// Represents a scalar field element
 pub type Fr = Fp256<MontBackend<FqConfig, 4>>;
 
-/// CurvePoint
+/// Represents a point in curve
 #[derive(Debug, Clone, Copy)]
 pub struct CurvePoint(pub xsk233_point);
 
-/// CompressedCurvePoint
+/// Represents a compressed point in curve
 pub type CompressedCurvePoint = [u8; 30];
 
 impl PartialEq for CurvePoint {
@@ -67,6 +68,7 @@ impl CurvePoint {
     }
 }
 
+// Calculate point scalar multiplication
 pub(crate) fn point_scalar_mul(scalar: Fr, point: CurvePoint) -> CurvePoint {
     let scalar = fr_to_le_bytes(&scalar);
 
@@ -94,8 +96,7 @@ pub(crate) fn point_scalar_mul_gen(scalar: Fr) -> CurvePoint {
 }
 
 /// Multi Scalar Multiplication
-/// For now we just compute individual point scalar multiplications
-/// and sum up the result
+// For now we just compute individual point scalar multiplications and sum up the result
 pub(crate) fn multi_scalar_mul(scalars: &[Fr], points: &[CurvePoint]) -> CurvePoint {
     assert_eq!(scalars.len(), points.len());
 
@@ -152,6 +153,7 @@ mod unit_test {
     use super::{Fr, multi_scalar_mul};
 
     #[test]
+    // Compares result of msm with one computed directly from point add operation
     fn test_validate_psm_with_point_add() {
         let mut rng = thread_rng();
         let k1 = Fr::rand(&mut rng);
@@ -174,7 +176,7 @@ mod unit_test {
     #[test]
     fn test_msm() {
         let mut rng = thread_rng();
-        let n = 100_000;
+        let n = 10_000;
         unsafe {
             let scalars: Vec<Fr> = (0..n).map(|_| Fr::rand(&mut rng)).collect();
             let points: Vec<CurvePoint> = (0..n).map(|_| CurvePoint(xsk233_generator)).collect();

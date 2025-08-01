@@ -1,3 +1,52 @@
+//! Utilities for ec-fft operations required by DV-Pari.
+//!
+//! We need a domain of sufficient length where we can do polynomial operations efficiently
+//! For our purposes we need domain D and D' each of length `m` and a domain D U D' of length 2m,
+//! where m is the `next power of 2` of the number of constraints
+//! We need the following features :
+//! # Polynomial Evaluation over the entire domain
+//! # Generate vanishing polynomial coefficients
+//! # Extend evaluations between domains D and D'
+//!
+//! Background on extend() function provided by ecfft library:
+//! For the last use case [`FFtree::extend()`], we require a single FFTree over the combined domain
+//! (D U D') to extend evaluations from domain D to D' i.e. evals_over_domain(D') <- FFtree::extend(evals_over_domain(D))
+//! If we assume {d_i} be the elements in domain D and {d_i'} be the elements in domain D', then
+//! the leaves of the combined tree is the combined domain D U D' and its leaves are arranged such that {d_i} and {d_i'} interleave each other
+//! i.e. {d_j} = {d_i[0], d_i'[0], d_i[1], d_i'[1], ...., d_i[m-1], d_i'[m-1]}
+//! Proof generation only requires a call to extend(), therefore we only initialize an instance of this tree.
+//! FFtree data structure includes fields that are not essential for extend function. An FFTree instance that does not include
+//! those fields is called a `minimal` tree
+//!
+//! Background on subtree_with_size() function provided by ecfft library:
+//! [`FFtree::subtree_with_size(usize)`] function returns a subtree with leaves at even indices
+//! For example, calling subtree_with_size(m) over combined tree (D U D' domain)  will return an FFTree over domain D
+//! We need FFTree over domains D and D' during srs-setup time to calculate lagrange evaluations over \tau, and also during proof generation
+//! to compute barycentric. So if a user is already in possession of a combined tree he can cheaply obtain subtrees with a call to the above function.
+//!
+//! Notes on size of FFTree:
+//! The FFTree structure includes more than the domain. It also includes precomputed values useful for polynomial operations. Together this makes the size
+//! of an instance of FFTree for our requirements quite large. 7.5 GB for domain size of 2^23 (D & D') and 15 GB for domain size of 2^24 (D U D').
+//! To reduce memory pressure, we load the tree from disk only when it's needed and clear it afterwards. Additionally we use `minimal` tree, where possible.
+//! A 'minimal' tree only includes fields necessary for specific use case (extend() during proof generation), in turn halving the memory usage requirement.
+//!
+//! Notes on different instantiations of FFTree:
+//! We need operations on domain D, D' and D U D'
+//! Over D: polynomial evaluation, lagrange evaluation over tau, barycentric weights, vanishing polynomial coefficients
+//! Over D': lagrange over tau, extend
+//! To generate vanishing polynomial over D', we need an FFTree of size 2m and with D' as its first subtree.
+//! To generate vanishing polynomial over D and to extend evaluations from D to D', we need and FFtree of size 2m with domain D as its first subtree
+//!
+//! Notes on parameters for instantiations of different FFTrees:
+//! Ecfft works over additive subgroup. We first find subgroup_generator, subgroup_order, coset_offset for FFTree over our field (sect233k1 scalar field).
+//! To instantiate the specific types of FFTree: Tree2n, Tree2nd <- FFtree over combined domain with first subtree D and D' respectively, we consider the following:
+//! we first find subgroup_generator for domain size '2m' which we call `base_generator`.
+//!
+//! FFtree with leaves (domain) given by coset + [0,1..,2m-1]*G gives Tree2n
+//! FFtree with leaves (domain) given by coset + [1,2..,2m]*G gives Tree2nd because of the interleaving property
+//! FFtree with leaves (domain) given by coset + [0..m-1]*(2G) => [0,2,4,..2m-4,2m-2] gives Treen
+//! //! FFtree with leaves (domain) given by (coset+G) + [0..m)*(2G) => [1, 3, 4, 2m-3, 2m-1] gives Treend
+
 use crate::curve::Fr;
 use ark_ff::AdditiveGroup;
 use ark_ff::Field;
