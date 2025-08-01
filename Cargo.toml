@@ -1,5 +1,5 @@
 [package]
-name = "alpen-rust-template" # CHANGEME
+name = "dv-pari" # CHANGEME
 version = "0.0.0" # CHANGEME
 edition = "2024" # CHANGEME
 authors = [
@@ -29,8 +29,22 @@ clippy.too_long_first_doc_paragraph = "warn"
 [features]
 
 [dependencies]
+ark-std = { version = "0.5.0", default-features = false, features = ["print-trace"] }
+ark-serialize = { version = "0.5.0", features = ["parallel"] }
+ark-poly = { version = "0.5.0", features = ["parallel"] }
+ark-ff = { version = "0.5.0", features = ["parallel"] }
+num-bigint = "0.4.6"
+byteorder = "1.5.0"
+anyhow = "1.0"
+rayon = "1.10.0" 
+memmap2 = "0.9.5"
+xs233-sys = "=0.2.0"
+ecfft = { git = "https://github.com/alpenlabs/ecfft", rev = "9c6cac7" }
+blake3 = "1.8.0"
 
 [dev-dependencies]
+num-traits = "0.2"
+rand_chacha = "0.3.1"
 
 [profile.release]
 opt-level = "z"   # Optimized for size, use 3 for speed

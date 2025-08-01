@@ -1,0 +1,215 @@
+#[cfg(test)]
+mod unit_tests {
+
+    use crate::artifacts::{R1CS_CONSTRAINTS_FILE, R1CS_WITNESS_FILE};
+    use crate::curve::Fr;
+    use crate::proving::{prover_prepares_precomputes, Proof};
+    use anyhow::Context;
+    use ark_ff::Field;
+    use ark_std::vec::Vec;
+    use std::path::Path;
+
+    use crate::gnark_r1cs::{load_witness_from_file, write_sparse_r1cs_to_file};
+
+    use crate::gnark_r1cs::{Row, SparseR1CSTable, Term};
+    use crate::srs::SRS;
+
+    use ark_std::rand::SeedableRng;
+
+    use rand_chacha::ChaCha20Rng;
+    use std::time::Instant;
+
+    use ark_ff::{BigInteger, PrimeField};
+
+    fn create_five_constraint_dump_on_a_file(cache_dir: &Path) {
+        fn create_five_constraint_dump() -> SparseR1CSTable {
+            /// Encode an `Fr` as canonical **big-endian** 32-byte array
+            fn fr_to_be_bytes(x: Fr) -> [u8; 32] {
+                let mut out = [0u8; 32];
+                x.into_bigint()
+                    .to_bytes_be()
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .for_each(|(i, b)| out[31 - i] = *b);
+                out
+            }
+
+            /// Constant wires used below
+            const WIRE_ONE: u32 = 0; // the “1” wire
+            const WIRE_O: u32 = 1;
+            const WIRE_W: u32 = 2;
+            const WIRE_Y: u32 = 3;
+            const WIRE_Z: u32 = 4;
+            const WIRE_X: u32 = 5;
+            const WIRE_T: u32 = 6;
+            const WIRE_S: u32 = 7;
+
+            // --------------------------------------------------------------------
+            // Coefficient table  (index ↔ value)
+            //   0 → 1
+            //   1 → 2
+            // --------------------------------------------------------------------
+            let coeff_table = vec![
+                fr_to_be_bytes(Fr::ONE),        // cid = 0
+                fr_to_be_bytes(Fr::from(2u64)), // cid = 1
+            ];
+
+            // Convenience closures
+            let c1 = |w: u32| Term {
+                wire_id: w,
+                coeff_id: 0,
+            }; // coeff = 1
+            let c2 = |w: u32| Term {
+                wire_id: w,
+                coeff_id: 1,
+            }; // coeff = 2
+
+            // --------------------------------------------------------------------
+            // Constraint rows  (L, R, O)
+            // --------------------------------------------------------------------
+            // copy constraints for public inputs
+            // rows.push(Row {
+            //     l: vec![c1(WIRE_O)],
+            //     r: vec![c1(WIRE_ONE)],
+            //     o: vec![],
+            // });
+
+            // rows.push(Row {
+            //     l: vec![c1(WIRE_W)],
+            //     r: vec![c1(WIRE_ONE)],
+            //     o: vec![],
+            // });
+
+            let rows = vec![
+                // c1:  x · x  = y
+                Row {
+                    l: vec![c1(WIRE_X)],
+                    r: vec![c1(WIRE_X)],
+                    o: vec![c1(WIRE_Y)],
+                },
+                // c2:  (y + z) · 1  = w
+                Row {
+                    l: vec![c1(WIRE_Y), c1(WIRE_Z)],
+                    r: vec![c1(WIRE_ONE)],
+                    o: vec![c1(WIRE_W)],
+                },
+                // c3:  (2·z) · 1  = t
+                Row {
+                    l: vec![c2(WIRE_Z)], // coeff 2
+                    r: vec![c1(WIRE_ONE)],
+                    o: vec![c1(WIRE_T)],
+                },
+                // c4:  (x + t) · 1  = s
+                Row {
+                    l: vec![c1(WIRE_X), c1(WIRE_T)],
+                    r: vec![c1(WIRE_ONE)],
+                    o: vec![c1(WIRE_S)],
+                },
+                // c5:  (w + s) · 1  = o
+                Row {
+                    l: vec![c1(WIRE_W), c1(WIRE_S)],
+                    r: vec![c1(WIRE_ONE)],
+                    o: vec![c1(WIRE_O)],
+                },
+            ];
+
+            SparseR1CSTable {
+                coeff_table,
+                indices_rows: rows,
+            }
+        }
+
+        let table: SparseR1CSTable = create_five_constraint_dump();
+        std::fs::create_dir_all(cache_dir) // ensure directory exists
+            .with_context(|| format!("creating {}", cache_dir.display()))
+            .unwrap();
+        let file_path = cache_dir.join(R1CS_CONSTRAINTS_FILE);
+        let mut file = std::fs::File::create(file_path.clone()).unwrap();
+        write_sparse_r1cs_to_file(&mut file, &table).unwrap();
+    }
+
+    #[test]
+    fn test_small_dump_proof_gen() {
+        let cache_dir = "srs_verifier_small_tmp";
+        create_five_constraint_dump_on_a_file(Path::new(cache_dir));
+
+        let x = Fr::from(3u64);
+        let y = x * x; // x^2 = 9
+        let z = Fr::from(4u64);
+        let w = y + z; // 9 + 4 = 13
+        let t = z + z; // 2*z = 8
+        let s = x + t; // 3 + 8 = 11
+        let o = w + s; // 13 + 11 = 24
+
+        let public_inputs: Vec<Fr> = vec![o, w];
+        let witness = vec![y, z, x, t, s];
+
+        let mut rng = ChaCha20Rng::seed_from_u64(43);
+        // let (srs, secrets) =
+        //   SRS::verifier_runs_setup_with_precompute(&inst, &mut rng, "srs_verifier_small_tmp").unwrap();
+        let (srs, secrets) =
+            SRS::verifier_runs_fresh_setup(&mut rng, Path::new(cache_dir), public_inputs.len())
+                .unwrap();
+
+        prover_prepares_precomputes("srs_verifier_small_tmp").unwrap();
+
+        let proof = Proof::prove("srs_verifier_small_tmp", public_inputs.clone(), &witness);
+
+        // Verify proof
+        let public_inputs: Vec<Fr> = vec![o, w];
+        let result = srs.verify("srs_verifier_small_tmp", secrets, &public_inputs, &proof);
+        assert!(
+            result,
+            "Verification should succeed for valid multi-constraint witness"
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn test_large_dump_proof_gen() {
+        let cache_dir = "srs_secu";
+        let now = Instant::now();
+        let num_public_inputs = 2;
+
+        let wit_fr: Vec<Fr> = load_witness_from_file(&format!("{cache_dir}/{R1CS_WITNESS_FILE}"));
+        assert_eq!(wit_fr[0], Fr::ONE);
+
+        let priv_fr = wit_fr[1 + num_public_inputs..].to_vec();
+        let public_inputs = wit_fr[1..1 + num_public_inputs].to_vec();
+
+        let mut rng = ChaCha20Rng::seed_from_u64(41);
+
+        let elapsed = now.elapsed();
+        println!("Took {} seconds to load R1CS", elapsed.as_secs());
+        let now = Instant::now();
+        let (srs, secrets) =
+            SRS::verifier_runs_setup_with_precompute(&mut rng, cache_dir, num_public_inputs)
+                .unwrap();
+
+        let elapsed = now.elapsed();
+        println!("Took {} seconds to setup SRS", elapsed.as_secs());
+
+        let now = Instant::now();
+        prover_prepares_precomputes(cache_dir).unwrap();
+        let elapsed = now.elapsed();
+        println!("Took {} seconds to precompute SRS", elapsed.as_secs());
+
+        let now = Instant::now();
+        let proof = Proof::prove(cache_dir, public_inputs.clone(), &priv_fr);
+
+        let elapsed = now.elapsed();
+        println!("Took {} seconds to generate proof", elapsed.as_secs());
+        let now = Instant::now();
+
+        // Verify proof
+        let result = srs.verify(cache_dir, secrets, &public_inputs, &proof);
+        let elapsed = now.elapsed();
+        println!("Took {} seconds to verify proof", elapsed.as_secs());
+
+        assert!(
+            result,
+            "Verification should succeed for valid multi-constraint witness"
+        );
+    }
+}

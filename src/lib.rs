@@ -1,7 +1,13 @@
-//! CHANGEME library-level docs.
+//! # lib.rs
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn foo() {}
-}
+pub(crate) mod artifacts;
+pub(crate) mod dvsnark;
+pub(crate) mod ec_fft;
+pub(crate) mod io_utils;
+pub(crate) mod tree_io;
+
+pub mod curve;
+pub mod gnark_r1cs;
+
+pub mod proving;
+pub mod srs;
