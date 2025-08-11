@@ -49,7 +49,7 @@ impl CurvePoint {
         }
     }
 
-    pub(crate) fn to_bytes(self) -> [u8; 30] {
+    pub(crate) fn to_bytes(self) -> CompressedCurvePoint {
         unsafe {
             let pt = self.0;
             let mut dst = [0u8; 30];
@@ -58,7 +58,7 @@ impl CurvePoint {
         }
     }
 
-    pub(crate) fn from_bytes(src: &mut [u8; 30]) -> CurvePoint {
+    pub(crate) fn from_bytes(src: &mut CompressedCurvePoint) -> CurvePoint {
         unsafe {
             let mut pt2 = xsk233_neutral;
             let success = xs233_sys::xsk233_decode(&mut pt2, src.as_mut_ptr() as *mut c_void);
@@ -126,7 +126,7 @@ fn fr_to_le_bytes(fr: &Fr) -> Vec<u8> {
     for limb in limbs.iter() {
         bytes.extend_from_slice(&limb.to_le_bytes());
     }
-    bytes.truncate(30);
+    bytes.truncate(30); // 30 specified by `xs233_sys`
 
     // remove trailing zeros
     // helps reduce iteration in double-and-add iterations

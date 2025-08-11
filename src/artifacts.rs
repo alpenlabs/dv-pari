@@ -1,35 +1,81 @@
-// File includes constant names
-/// We have artifacts of three types
-/// SRS - G_Q, G_M, G_K, L_tau* (Should be computed)
-/// MainPrecompute - Z_poly, Z_polyd (Recommended to download)
-/// AuxPrecompute = bar_wts, z_valsinv, tree2n_fast,
+//! Module for name of artifacts used during the setup, proof generation and verification steps.
+//!
+//! When the size of R1CS Constraints is large (~2^23 for SP1 stark verifier over sect233k1), we end up needing to
+//! initialize similarly large data structures for different purposes during setup, proof generation and verification.
+//! We save all of these instances in separate files so that they don't incur large cost to cache them in memory.
+//! Some of them can be computed in real time but we save them to disk nonetheless to ease test & development time.
+//! A full list of such instances, files what they contain, where they are saved and
+//! their properties (size, lifetime, ability to verify if downloaded, etc) is specificed in full below.
+//! Short summary: we require a user to download around 1 GB of precompute for the least amout of runtime computation.
+//! These specific precomputes can be verified cheaply. However, if he is constrained by compute cost more than communication (network) cost,
+//! he can download additional precomputes.
+
+//! DV-SRS:
+//! Contains G_Q, G_M, G_K_{i}
+//! These files depend upon the specific setup - chosen trapdoors and r1cs constraints.
+//! These are provided by the designated verifier to the prover, each file is around 270 MB for our use case.
 pub(crate) const SRS_G_Q: &str = "g_q";
 pub(crate) const SRS_G_M: &str = "g_m";
 pub(crate) const SRS_G_K_0: &str = "g_k_0";
 pub(crate) const SRS_G_K_1: &str = "g_k_1";
 pub(crate) const SRS_G_K_2: &str = "g_k_2";
 
+// FFTREE_OVER_DOMAIN:
+// Instance of ecfft::FFTree<Fr> which contains fields necessary for efficient polynomial operation.
+// TREE_N with 2^23 constraints is of size 7.5 GB.
+/// FFTree<Fr> over domain D U D'
+// elements of domain D and D' interleave each other such that D[0] occupies first index
 pub(crate) const TREE_2N: &str = "tree2n_fast";
+/// FFTree<Fr> over domain D' U D
+// elements of domain D' and D interleave each other such that D'[0] occupies first index
 pub(crate) const TREE_2ND: &str = "tree2nd_fast";
+/// FFTree<Fr> over domain D.
+/// Also a subtree of TREE_2N
 pub(crate) const TREE_N: &str = "treen_fast";
+/// FFTree<Fr> over domain D'.
+/// Also a subtree of TREE_2ND
 pub(crate) const TREE_ND: &str = "treend_fast";
 
-pub(crate) const L_TAU: &str = "l_tau";
-pub(crate) const Z_POLY: &str = "z_poly";
-pub(crate) const L_TAUD: &str = "l_taud";
+// DOMAIN_SPECIFIC_PRECOMPUTES:
+// Precomputes that are specific to the domain: vanishing polynomials, their evaluations and barycentric weights
+// Vanishing polynomial specifically takes long to compute because you have to call FFTree::exit() which is O(N log^2 N)
+// but it can be verified cheaply and is small enough to be shared over network.
+// These precomputes are domain specific, so do not change unless the size of R1CS constraints exceeds 1<<23.
+// Therefore a user only ever has to download them once.
+/// Coefficients of Vanishing Polynomial over domain D
+pub const Z_POLY: &str = "z_poly";
+/// Coefficients of Vanishing Polynomial over domain D'
 pub(crate) const Z_POLYD: &str = "z_polyd";
+/// Barycentric weights over domain D
+pub const BAR_WTS: &str = "bar_wts";
+/// Barycentric weights over domain D'
+pub const BAR_WTSD: &str = "bar_wtsd";
+/// Evaluations of Vanishing Polynomial, which is formed over domain D, evaluated on domain D'
+pub const Z_VALS2_INV: &str = "z_vals2inv";
+/// Evaluations of Vanishing Polynomial, which is formed over domain D', evaluated on domain D
+pub const Z_VALS2D_INV: &str = "z_vals2dinv";
 
-pub(crate) const BAR_WTS: &str = "bar_wts";
-pub(crate) const BAR_WTSD: &str = "bar_wtsd";
-
+// LAGRANGE_EVALUATIONS:
+// Specific to trapdoor and are not shared by designated verifier.
+// These are cached only to aid test&development time where you may reuse a single setup() for multiple prooving tests
+// Is cheap enough to compute during runtime -- so it is possible to not save them in file
+/// Evaluation of Lagrange Polynomial, which is formed over domain D, evaluated at trapdoor element `tau`
+pub(crate) const L_TAU: &str = "l_tau";
+/// Evaluation of Lagrange Polynomial, which is formed over domain D', evaluated at trapdoor element `tau`
+pub(crate) const L_TAUD: &str = "l_taud";
+/// Evaluation of Lagrange Polynomial, which is formed over domain D U D', evaluated at trapdoor element `tau`
 pub(crate) const L_TAUL: &str = "l_taul";
 
-pub(crate) const Z_VALS2_INV: &str = "z_vals2inv";
-pub(crate) const Z_VALS2D_INV: &str = "z_vals2dinv";
-
-pub(crate) const R1CS_CONSTRAINTS_FILE: &str = "r1cs_temp";
-#[cfg(test)]
-pub(crate) const R1CS_WITNESS_FILE: &str = "witness_temp";
+// SP1_CONSTRAINTS_AND_WITNESS:
+/// R1CS Constraint File dumped by sp1 gnark
+// Represents stark proof verifier over sect233k1
+// Generated by SP1 gnark fork
+pub const R1CS_CONSTRAINTS_FILE: &str = "r1cs_temp";
+/// R1CS Witness File dumped by sp1 gnark
+// Witness that satsifies the above constraint
+// Different between proof instances
+// Generated by SP1 gnark fork
+pub const R1CS_WITNESS_FILE: &str = "witness_temp";
 
 /*
 Verifier

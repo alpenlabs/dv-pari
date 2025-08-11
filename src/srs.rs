@@ -549,9 +549,6 @@ impl SRS {
         public_inputs: &[Fr], // See: test_public_inputs_hash to understand how bridge public inputs will be passed to this function later
         proof: &Proof,
     ) -> bool {
-        println!("proof {:?}", proof);
-        println!("trapdoor {:?}", secrets);
-
         // Because winternitz signed data is compressed point form (30 bytes), we need to decompress it
         let proof_commit_p = CurvePoint::from_bytes(&mut proof.commit_p.clone());
         let proof_kzg_k = CurvePoint::from_bytes(&mut proof.kzg_k.clone());

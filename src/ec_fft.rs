@@ -42,10 +42,12 @@
 //! To instantiate the specific types of FFTree: Tree2n, Tree2nd <- FFtree over combined domain with first subtree D and D' respectively, we consider the following:
 //! we first find subgroup_generator for domain size '2m' which we call `base_generator`.
 //!
-//! FFtree with leaves (domain) given by coset + [0,1..,2m-1]*G gives Tree2n
-//! FFtree with leaves (domain) given by coset + [1,2..,2m]*G gives Tree2nd because of the interleaving property
-//! FFtree with leaves (domain) given by coset + [0..m-1]*(2G) => [0,2,4,..2m-4,2m-2] gives Treen
-//! //! FFtree with leaves (domain) given by (coset+G) + [0..m)*(2G) => [1, 3, 4, 2m-3, 2m-1] gives Treend
+//! FFtree with leaves given by coset + [0,1..,2m-1]*G gives Tree2n
+//! FFtree with leaves given by (coset+G) + [0,1..,2m-1]*G => coset + [1,2..,2m]*G gives Tree2nd because of the interleaving property
+//! FFtree with leaves given by coset + [0..m-1]*(G') => coset + [0..m-1]*(2G) => [0,2,4,..2m-4,2m-2] gives Treen
+//! FFtree with leaves given by (coset+G) + [0..m-1]*(G') => (coset+G) + [0..m-1]*(2G) => [1, 3, 4, 2m-3, 2m-1] gives Treend
+//! Therefore to generated tree over domain D', we shift coset by G which is the `base_generator`,
+//! we use this shifted coset to shift leaves [0..n-1] G', where G' is the generator over the sub-domain
 
 use crate::curve::Fr;
 use ark_ff::AdditiveGroup;
@@ -64,12 +66,14 @@ use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 
+// generator for the additive subgroup of size 2 * num_constraints
+// Fields: `subgroup_generator` and `subgroup_order` are constant parameters,
+// `base_log_n` is log_2(2 * num_constraints)
 fn base_generator(
     subgroup_generator: Point<ShortWeierstrassCurve<Fr>>,
     subgroup_order: usize,
     base_log_n: usize,
 ) -> Point<ShortWeierstrassCurve<Fr>> {
-    // get a generator of a subgroup with order `n`
     let mut generator = subgroup_generator;
     for _ in 0..subgroup_order - base_log_n {
         generator += generator;
@@ -79,6 +83,13 @@ fn base_generator(
 
 // The following function: build_ec_fftrees is copied from ecfft library.
 // But includes some changes to use parallel processing while computing leaves
+/// Build EC FFTree for efficient polynomial operations with curve parameters and instance specific values
+/// Fields:
+///     # subgroup_generator, coset_offset, subgroup_order: curve constants
+///     # base_log_n: 1 << num_constraints+1
+///     # domain_len: size of domain for polynomial operation
+///     # shift_by_one: true for domain over D', false for domain D. shift_by_one swaps odd and even indexed leaves of a tree
+///     # minimal_tree: true if FFTree<Fr> instance should only include fields necessary for proof generation. Useful for memory efficiency.
 fn build_ec_fftrees(
     subgroup_generator: Point<ShortWeierstrassCurve<Fr>>,
     subgroup_order: usize,
@@ -101,19 +112,20 @@ fn build_ec_fftrees(
         return None;
     }
 
-    // get a generator of a subgroup with order `n`
+    // G' <- get a generator for a subgroup with order `log_n`
     let mut generator = subgroup_generator;
     for _ in 0..subgroup_two_addicity - log_n {
         generator += generator;
     }
 
+    // `base_generator` or G <- get a generator for a subgroup with order `base_log_n`
     let base_generator = base_generator(
         subgroup_generator,
         subgroup_two_addicity as usize,
         base_log_n,
     );
 
-    // find our rational maps
+    // find our rational maps; directly copied from ecfft lib
     let mut rational_maps = Vec::new();
     let mut g = generator;
     for _ in 0..log_n {
@@ -135,6 +147,7 @@ fn build_ec_fftrees(
         rational_maps.push(isogeny.r)
     }
 
+    // for shifted domain i.e. D', add base_generator G to coset
     let coset_offset = if shift_by_one {
         coset_offset + base_generator
     } else {
@@ -144,15 +157,12 @@ fn build_ec_fftrees(
     // generate the FFTree leaf nodes
     let mut leaves = vec![Fr::zero(); domain_len];
     leaves.par_iter_mut().enumerate().for_each(|(i, leaf)| {
-        // with shift you get (O+G + [i]G) instead of (O + [i]G) for i=0..domain_len-1
-        // i.e. leaves displaced by an index
-        // note [domain_len]G = [0]G because G is generator of subgroup 1 <<domain_len
-        let point = coset_offset + generator * BigUint::from(i);
+        let point = coset_offset + generator * BigUint::from(i); // [C + G] + [i] G'
         *leaf = point.x;
     });
 
     let dat_tree = if minimal_tree {
-        FFTree::new_small(leaves, rational_maps)
+        FFTree::new_small(leaves, rational_maps) // small tree has only fields necessary for proof generation
     } else {
         FFTree::new(leaves, rational_maps)
     };
@@ -178,9 +188,12 @@ pub(crate) fn get_both_domains(tree2n: &FFTree<Fr>) -> [Vec<Fr>; 2] {
     [treen_leaves, treend_leaves]
 }
 
-// Build FFTree with sect params
-// domain_len: size of ECFFT domain
-// shift: FFTree has leaves (w^1, w^2, .., w^n) instead of (w^0, w^1, .., w^(n-1)) i.e. shifted by 1 position
+/// Build Sect233k1 EC FFTree for efficient polynomial operations with sect233k1 curve parameters and instance specific values
+/// Fields:
+///     # base_log_n: 1 << num_constraints+1
+///     # domain_len: size of domain for polynomial operation
+///     # shift_by_one: true for domain over D', false for domain D. shift_by_one swaps odd and even indexed leaves of a tree
+///     # minimal_tree: true if FFTree<Fr> instance should only include fields necessary for proof generation. Useful for memory efficiency.
 pub(crate) fn build_sect_ecfft_tree(
     domain_len: usize,
     shift_by_one: bool,
@@ -234,6 +247,8 @@ pub(crate) struct LagrangeEvals {
 /// Evaluates all Lagrange coefficients L_{i,S}(tau) for a domain S (leaves of fftree_n)
 /// at a given point tau. Uses fftree.vanish() and fftree.exit().
 /// Complexity: O(N log^2 N), potentially with larger constants due to 2N-sized tree ops.
+// TODO: this function does too many things; break it to compute vanishing polynomial coefficient
+// and also make use of `evaluate_lagrange_coeffs_using_precompute`.
 pub(crate) fn evaluate_all_lagrange_coeffs_ecfft_with_vanish(
     fftree_2n: &FFTree<Fr>, // FFTree (size 2*N required for vanishing polynomial)
     tau: Fr,
@@ -424,86 +439,6 @@ pub(crate) fn evaluate_lagrange_coeffs_using_precompute(
     Ok(lagrange_coeffs)
 }
 
-/// Evaluates all Lagrange coefficients L_{i,S}(tau) for a domain S (leaves of fftree_n)
-/// at a given point tau. Uses fftree.vanish() and fftree.exit().
-/// Complexity: O(N log^2 N), potentially with larger constants due to 2N-sized tree ops.
-#[cfg(test)]
-pub(crate) fn compute_bar_wts_using_precompute(
-    fftree_n: &FFTree<Fr>, // FFTree (size 2*N required for vanishing polynomial)
-    tau: Fr,
-    z_s_coeffs_vec_from_exit: Vec<Fr>,
-) -> Result<Vec<Fr>, String> {
-    let n = fftree_n.f.leaves().len();
-    assert!(n > 1 && n.is_power_of_two());
-
-    let domain_points_s = fftree_n.f.leaves(); // Domain S, size N
-    assert!(!domain_points_s.contains(&tau));
-
-    let z_s_coeffs = DensePolynomial::from_coefficients_vec(z_s_coeffs_vec_from_exit.clone());
-
-    if z_s_coeffs.degree() != n && n > 0 {
-        // Degree should be exactly N
-        return Err(format!(
-            "Vanishing polynomial Z_S(X) has degree {}, expected {}. Check for distinct domain points.",
-            z_s_coeffs.degree(),
-            n
-        ));
-    }
-
-    // d. Compute coefficients of the derivative Z'_S(X)
-    println!("  Step d: Computing derivative Z'_S(X)...");
-    let z_s_prime_coeffs = derivative(&z_s_coeffs);
-    if z_s_prime_coeffs.degree() != n - 1 {
-        return Err(format!(
-            "Derivative Z'_S(X) has degree {}, expected {}.",
-            z_s_prime_coeffs.degree(),
-            n - 1
-        ));
-    }
-
-    // e. Evaluate Z'_S(X) at all points s_i in S using fftree_n.enter()
-    //    Z'_S(X) has degree N-1, so N coefficients (unless N=1, then degree 0, 1 coeff).
-    println!("  Step e: Evaluating Z'_S(s_i) using fftree_n.enter()...");
-    let mut coeffs_for_enter = z_s_prime_coeffs.coeffs().to_vec();
-    while coeffs_for_enter.len() < n {
-        // Pad to size N if degree is less than N-1
-        coeffs_for_enter.push(Fr::zero());
-    }
-    if coeffs_for_enter.len() > n && n > 0 {
-        // Should not happen if padding is correct
-        return Err(format!(
-            "Coefficient vector for Z'_S(X) has length {}, expected at most {}.",
-            coeffs_for_enter.len(),
-            n
-        ));
-    }
-
-    let mut z_s_prime_evals_on_s = fftree_n.enter(&coeffs_for_enter);
-    if z_s_prime_evals_on_s.len() != n {
-        return Err("Evaluation of Z_S_prime returned incorrect number of points.".to_string());
-    }
-
-    // f. Compute L_{i,S}(tau) = Z_S(tau) / ( (tau - s_i) * Z'_S(s_i) )
-    println!("  Step f: Computing final Lagrange coefficients...");
-    let mut denominators: Vec<Fr> = Vec::with_capacity(n);
-    for i in 0..n {
-        let tau_minus_s_i = tau - domain_points_s[i];
-        if z_s_prime_evals_on_s[i].is_zero() {
-            // This implies a repeated root in S if domain_points_s were distinct,
-            // or an issue with derivative calculation/evaluation.
-            return Err(format!(
-                "Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.",
-                i, i, domain_points_s[i]
-            ));
-        }
-        denominators.push(tau_minus_s_i * z_s_prime_evals_on_s[i]);
-    }
-
-    ark_ff::batch_inversion(&mut z_s_prime_evals_on_s);
-
-    Ok(z_s_prime_evals_on_s)
-}
-
 // copied from ecfft lib
 // uses standard derivative formula
 fn derivative<F: Field>(p: &DensePolynomial<F>) -> DensePolynomial<F> {
@@ -518,7 +453,7 @@ fn derivative<F: Field>(p: &DensePolynomial<F>) -> DensePolynomial<F> {
     }
 }
 
-// evaluate z_poly at leaves of treen
+/// Evaluate vanishing polynomial over some domain
 pub(crate) fn evaluate_vanishing_poly_over_domain(z_poly: &[Fr], treen: &FFTree<Fr>) -> Vec<Fr> {
     let treen_leaves = treen.f.leaves();
     // O(Nlog^n) cost to evaluate at leaves
@@ -533,7 +468,7 @@ pub(crate) fn evaluate_vanishing_poly_over_domain(z_poly: &[Fr], treen: &FFTree<
     tree_ev
 }
 
-// obtain L(tau) for unified domain DUD' using L(tau) for D and D'
+// obtain L(tau) for unified domain DUD' using previously computed values of L(tau) for D and D'
 pub(crate) fn evaluate_lagrage_over_unified_domain(
     tau: Fr,
     treen: &FFTree<Fr>,
@@ -569,6 +504,8 @@ pub(crate) fn evaluate_lagrage_over_unified_domain(
 }
 
 #[allow(clippy::too_many_arguments)]
+// we additionally use vanishing polynomial evaluations `z_poly_dom2` and `z_poly2_dom`
+// for lesser compute cost
 pub(crate) fn evaluate_lagrage_over_unified_domain_with_precompute(
     tau: Fr,
     num_constraints: usize,
@@ -600,7 +537,7 @@ pub(crate) fn evaluate_lagrage_over_unified_domain_with_precompute(
 // Using domain points and evaluations of a polynomial at those points "p_evals"
 // obtain p(alpha) at O(N) cost -> possible using precomputed barycentric weights
 // else FFT-like direct approach is quasi-linear (costlier)
-pub(crate) fn evaluate_at_alpha_from_barycentric_weights(
+pub(crate) fn evaluate_poly_at_alpha_using_barycentric_weights(
     domain_points: &[Fr],
     bar_weights: &[Fr],
     zpoly_coeffs: &DensePolynomial<Fr>,
@@ -798,13 +735,11 @@ mod test {
     use std::path::Path;
 
     use super::{build_sect_ecfft_tree, evaluate_lagrange_coeffs_using_precompute};
-    use crate::artifacts::{BAR_WTSD, TREE_2N, TREE_2ND, Z_POLYD};
+    use crate::artifacts::TREE_2N;
     use crate::curve::Fr;
     use crate::ec_fft::{
-        compute_bar_wts_using_precompute, evaluate_all_lagrange_coeffs_ecfft_with_vanish,
-        evaluate_lagrage_over_unified_domain,
+        evaluate_all_lagrange_coeffs_ecfft_with_vanish, evaluate_lagrage_over_unified_domain,
     };
-    use crate::io_utils::{read_fr_vec_from_file, write_fr_vec_to_file};
     use crate::tree_io::{read_fftree_from_file, write_fftree_to_file};
 
     use ark_ff::Zero;
@@ -1216,32 +1151,10 @@ mod test {
         )
         .unwrap();
 
-        let bar_wts =
-            compute_bar_wts_using_precompute(fftree_n, tau, z_s_coeffs_vec_from_exit).unwrap();
-        assert_eq!(bar_wts, z_s_prime_evals_on_s);
-
         let lag_coeff4 = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree_2n, delta)
             .unwrap()
             .lagrange_coeffs;
         assert_eq!(lag_coeff3, lag_coeff4);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_util_to_dump_bar_wts() {
-        let cache_dir = Path::new("srs_sect");
-        let tree2nd: FFTree<Fr> = read_fftree_from_file(cache_dir.join(TREE_2ND)).unwrap();
-        let two_n = tree2nd.f.leaves().len();
-        let treend = tree2nd.subtree_with_size(two_n / 2).clone();
-
-        let mut rng = ChaCha20Rng::seed_from_u64(42);
-        let tau = Fr::rand(&mut rng);
-
-        let z_poly = read_fr_vec_from_file(cache_dir.join(Z_POLYD)).unwrap();
-
-        let bar_wts2 = compute_bar_wts_using_precompute(&treend, tau, z_poly).unwrap();
-
-        write_fr_vec_to_file(cache_dir.join(BAR_WTSD), &bar_wts2).unwrap();
     }
 
     #[test]

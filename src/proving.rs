@@ -6,7 +6,7 @@ use crate::artifacts::{
 };
 use crate::curve::{CompressedCurvePoint, CurvePoint, Fr, multi_scalar_mul};
 use crate::ec_fft::{
-    build_sect_ecfft_tree, evaluate_at_alpha_from_barycentric_weights, get_both_domains,
+    build_sect_ecfft_tree, evaluate_poly_at_alpha_using_barycentric_weights, get_both_domains,
 };
 use crate::io_utils::{read_fr_vec_from_file, read_point_vec_from_file};
 use crate::srs::SRS;
@@ -517,21 +517,21 @@ impl Proof {
             };
 
             // Evaluate a,b,c,q at alpha
-            let a0 = evaluate_at_alpha_from_barycentric_weights(
+            let a0 = evaluate_poly_at_alpha_using_barycentric_weights(
                 &dom_elems,
                 &barycentric_weights,
                 &vanishing_poly,
                 &evals.a,
                 alpha,
             );
-            let b0 = evaluate_at_alpha_from_barycentric_weights(
+            let b0 = evaluate_poly_at_alpha_using_barycentric_weights(
                 &dom_elems,
                 &barycentric_weights,
                 &vanishing_poly,
                 &evals.b,
                 alpha,
             );
-            let i0 = evaluate_at_alpha_from_barycentric_weights(
+            let i0 = evaluate_poly_at_alpha_using_barycentric_weights(
                 &dom_elems,
                 &barycentric_weights,
                 &vanishing_poly,

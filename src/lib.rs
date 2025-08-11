@@ -1,6 +1,6 @@
 //! dv-pari library
 
-pub(crate) mod artifacts;
+pub mod artifacts;
 pub(crate) mod dvsnark_test;
 pub(crate) mod ec_fft;
 pub(crate) mod io_utils;

@@ -19,6 +19,10 @@
 //!  ──────────────────────────────────────────────────────────────────────
 //! ```
 
+use rayon::{
+    iter::{IntoParallelIterator, ParallelIterator},
+    scope,
+};
 use std::{
     fs::File,
     io::{self, BufReader, Read},
@@ -110,11 +114,6 @@ pub(crate) struct SparseR1CSTable {
     pub coeff_table: Vec<[u8; 32]>,
     pub indices_rows: Vec<Row>,
 }
-
-use rayon::{
-    iter::{IntoParallelIterator, ParallelIterator},
-    scope,
-};
 
 /// Parse a gnark SP‑1 sparse‑R1CS dump from a file
 pub(crate) fn load_sparse_r1cs_from_file<R: Read + Send>(
@@ -292,6 +291,19 @@ impl R1CSInstance {
         inst
     }
 
+    // R1CSInstance passed as input to this function adheres to the standard R1CS constraint Aw . Bw = Cw
+    // Here 'w' is a witness vector of size 1 + num_public_inputs + num_private inputs and has the format
+    // [1, ..public_inputs, private_inputs]. A, B and C are R1CS Matrices of size num_constraints x witness_size
+    // In our case (SP1 Integration), both num_constraints and witness_size is slightly less than 1 << 23.
+
+    // The purpose this function is to introduce matrix D such that Aw . Bw = C'w + Dx,
+    // where x is public-input vector and Dx is evaluation of public input polynomial i(X) over the domain
+    // and matrix D is of size num_constraints x num_public_inputs
+
+    // To adjust to the new relation, we modify C to C' such that C'w = Cw - Dx
+    // We do this by iterating over each of the constraints (rows) of C and add corresponding constraint of -D
+    // This means changing the elements of matrix from C_{ij} to C_{ij} - D_{ij} for i < num_constraints and j < num_public_inputs
+
     // D is of size [num_constraints x num_public_inputs]
     // d0^0, d0^1, ..., d0^{k-1}
     // d1^0,
@@ -354,6 +366,8 @@ impl R1CSInstance {
     }
 }
 
+// evaluate monomial basis polynomial at alpha
+// this polynomial has 'public_inputs' as its coefficients
 pub(crate) fn evaluate_monomial_basis_poly(public_inputs: &[Fr], alpha: Fr) -> Fr {
     let mut increasing_power_of_alpha = Fr::ONE;
     let mut running_accumulator = Fr::ZERO;
