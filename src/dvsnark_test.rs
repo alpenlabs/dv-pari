@@ -20,13 +20,14 @@ mod tests {
     use crate::gnark_r1cs::{load_witness_from_file, write_sparse_r1cs_to_file};
 
     use crate::gnark_r1cs::{Row, SparseR1CSTable, Term};
-    use crate::srs::SRS;
+    use crate::srs::{SRS, Trapdoor};
 
     use ark_std::rand::SeedableRng;
 
     use rand_chacha::ChaCha20Rng;
     use std::time::Instant;
 
+    use ark_ff::UniformRand;
     use ark_ff::{BigInteger, PrimeField};
 
     // dump toy constraints
@@ -146,10 +147,15 @@ mod tests {
         let witness = vec![y, z, x, t, s];
 
         let mut rng = ChaCha20Rng::seed_from_u64(43);
+        let trapdoor = Trapdoor {
+            tau: Fr::rand(&mut rng),
+            delta: Fr::rand(&mut rng),
+            epsilon: Fr::rand(&mut rng),
+        };
+
         // Run SRS setup assuming nothing is precomputed
-        let (_, secrets) =
-            SRS::verifier_runs_fresh_setup(&mut rng, Path::new(cache_dir), public_inputs.len())
-                .unwrap();
+        let _ = SRS::verifier_runs_fresh_setup(trapdoor, Path::new(cache_dir), public_inputs.len())
+            .unwrap();
 
         // Prover precomputes stuff he needs for proving
         // These precomputes can be reused for different proof generations
@@ -160,7 +166,7 @@ mod tests {
 
         // Designated verifier verifies proof
         let public_inputs: Vec<Fr> = vec![o, w];
-        let result = SRS::verify("srs_verifier_small_tmp", secrets, &public_inputs, &proof);
+        let result = SRS::verify("srs_verifier_small_tmp", trapdoor, &public_inputs, &proof);
         assert!(
             result,
             "Verification should succeed for valid multi-constraint witness"
@@ -187,10 +193,15 @@ mod tests {
         println!("Took {} seconds to load R1CS witness", elapsed.as_secs());
         let now = Instant::now();
 
+        let trapdoor = Trapdoor {
+            tau: Fr::rand(&mut rng),
+            delta: Fr::rand(&mut rng),
+            epsilon: Fr::rand(&mut rng),
+        };
+
         // verifier runs setup assuming `artifacts::DOMAIN_SPECIFIC_PRECOMPUTES` are present inside `cache_dir`
-        let (_, secrets) =
-            SRS::verifier_runs_setup_with_precompute(&mut rng, cache_dir, num_public_inputs)
-                .unwrap();
+        let _ = SRS::verifier_runs_setup_with_precompute(trapdoor, cache_dir, num_public_inputs)
+            .unwrap();
 
         let elapsed = now.elapsed();
         println!("Took {} seconds to setup SRS", elapsed.as_secs());
@@ -210,7 +221,7 @@ mod tests {
         let now = Instant::now();
 
         // Designated verifier verifies proof
-        let result = SRS::verify(cache_dir, secrets, &public_inputs, &proof);
+        let result = SRS::verify(cache_dir, trapdoor, &public_inputs, &proof);
         let elapsed = now.elapsed();
         println!("Took {} seconds to verify proof", elapsed.as_secs());
 

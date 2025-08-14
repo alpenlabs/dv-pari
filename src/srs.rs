@@ -21,10 +21,10 @@ use crate::io_utils::{
 use crate::proving::{Proof, Transcript};
 use crate::tree_io::{read_fftree_from_file, read_minimal_fftree_from_file, write_fftree_to_file};
 use anyhow::{Context, Result};
-use ark_ff::{Field, One, UniformRand, Zero};
+use ark_ff::{Field, One, Zero};
 use ark_poly::Polynomial;
 use ark_poly::univariate::DensePolynomial;
-use ark_std::{rand::Rng, vec::Vec};
+use ark_std::vec::Vec;
 use ecfft::FFTree;
 use ecfft::utils::BinaryTree;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -197,11 +197,11 @@ fn compute_srs_matrices(
 
 impl SRS {
     /// verifier_runs_fresh_setup
-    pub fn verifier_runs_fresh_setup<R: Rng>(
-        rng: &mut R,
+    pub fn verifier_runs_fresh_setup(
+        trapdoor: Trapdoor,
         cache_dir: &Path,
         num_public_inputs: usize,
-    ) -> Result<(Self, Trapdoor)> {
+    ) -> Result<Self> {
         std::fs::create_dir_all(cache_dir) // ensure directory exists
             .with_context(|| format!("creating {}", cache_dir.display()))?;
 
@@ -214,9 +214,10 @@ impl SRS {
         let n_log = num_constraints.ilog2() as usize;
 
         // Trapdoor secrets ---------------------------------------------------
-        let tau = Fr::rand(rng);
-        let delta = Fr::rand(rng);
-        let epsilon = Fr::rand(rng);
+        let tau = trapdoor.tau;
+        let delta = trapdoor.delta;
+        let epsilon = trapdoor.epsilon;
+        assert!(!epsilon.is_zero(), "ε must be non-zero");
 
         assert!(!epsilon.is_zero(), "ε must be non‑zero");
 
@@ -363,22 +364,19 @@ impl SRS {
             &l_taul,
         )?;
 
-        Ok((
-            Self {
-                g_m: srs_mats.g_m,
-                g_q: srs_mats.g_q,
-                g_k: srs_mats.g_k,
-            },
-            trapdoor,
-        ))
+        Ok(Self {
+            g_m: srs_mats.g_m,
+            g_q: srs_mats.g_q,
+            g_k: srs_mats.g_k,
+        })
     }
 
     /// verifier_runs_setup_with_precompute
-    pub fn verifier_runs_setup_with_precompute<R: Rng>(
-        rng: &mut R,
+    pub fn verifier_runs_setup_with_precompute(
+        trapdoor: Trapdoor,
         cache_dir: impl AsRef<Path>,
         num_public_inputs: usize,
-    ) -> Result<(Self, Trapdoor)> {
+    ) -> Result<Self> {
         let cache_dir = cache_dir.as_ref();
         std::fs::create_dir_all(cache_dir)
             .with_context(|| format!("creating {}", cache_dir.display()))?;
@@ -391,10 +389,8 @@ impl SRS {
         let num_constraints = inst.num_constraints;
         let n_log = num_constraints.ilog2() as usize;
 
-        // Trapdoor secrets ---------------------------------------------------
-        let tau = Fr::rand(rng);
-        let delta = Fr::rand(rng);
-        let epsilon = Fr::rand(rng);
+        let tau = trapdoor.tau;
+        let epsilon = trapdoor.epsilon;
         assert!(!epsilon.is_zero(), "ε must be non-zero");
 
         // Helper: read-or-build an ECFFT tree for *exact* domain size ---------
@@ -504,13 +500,6 @@ impl SRS {
         z_vals2_inv.clear();
         z_vals2d_inv.clear();
 
-        // --------------------------------------------------------------------
-        let trapdoor = Trapdoor {
-            tau,
-            delta,
-            epsilon,
-        };
-
         let srs_mats = compute_srs_matrices(
             cache_dir,
             &trapdoor,
@@ -521,14 +510,11 @@ impl SRS {
             &l_taul,
         )?;
 
-        Ok((
-            Self {
-                g_m: srs_mats.g_m,
-                g_q: srs_mats.g_q,
-                g_k: srs_mats.g_k,
-            },
-            trapdoor,
-        ))
+        Ok(Self {
+            g_m: srs_mats.g_m,
+            g_q: srs_mats.g_q,
+            g_k: srs_mats.g_k,
+        })
     }
 }
 
