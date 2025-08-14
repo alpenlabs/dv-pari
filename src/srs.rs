@@ -543,7 +543,6 @@ impl SRS {
 
     /// verify
     pub fn verify(
-        &self,
         cache_dir: &str,
         secrets: Trapdoor,
         public_inputs: &[Fr], // See: test_public_inputs_hash to understand how bridge public inputs will be passed to this function later

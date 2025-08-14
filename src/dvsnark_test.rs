@@ -147,7 +147,7 @@ mod tests {
 
         let mut rng = ChaCha20Rng::seed_from_u64(43);
         // Run SRS setup assuming nothing is precomputed
-        let (srs, secrets) =
+        let (_, secrets) =
             SRS::verifier_runs_fresh_setup(&mut rng, Path::new(cache_dir), public_inputs.len())
                 .unwrap();
 
@@ -160,7 +160,7 @@ mod tests {
 
         // Designated verifier verifies proof
         let public_inputs: Vec<Fr> = vec![o, w];
-        let result = srs.verify("srs_verifier_small_tmp", secrets, &public_inputs, &proof);
+        let result = SRS::verify("srs_verifier_small_tmp", secrets, &public_inputs, &proof);
         assert!(
             result,
             "Verification should succeed for valid multi-constraint witness"
@@ -188,7 +188,7 @@ mod tests {
         let now = Instant::now();
 
         // verifier runs setup assuming `artifacts::DOMAIN_SPECIFIC_PRECOMPUTES` are present inside `cache_dir`
-        let (srs, secrets) =
+        let (_, secrets) =
             SRS::verifier_runs_setup_with_precompute(&mut rng, cache_dir, num_public_inputs)
                 .unwrap();
 
@@ -210,7 +210,7 @@ mod tests {
         let now = Instant::now();
 
         // Designated verifier verifies proof
-        let result = srs.verify(cache_dir, secrets, &public_inputs, &proof);
+        let result = SRS::verify(cache_dir, secrets, &public_inputs, &proof);
         let elapsed = now.elapsed();
         println!("Took {} seconds to verify proof", elapsed.as_secs());
 

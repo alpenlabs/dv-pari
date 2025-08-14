@@ -45,7 +45,7 @@ pub(crate) const TREE_ND: &str = "treend_fast";
 /// Coefficients of Vanishing Polynomial over domain D
 pub const Z_POLY: &str = "z_poly";
 /// Coefficients of Vanishing Polynomial over domain D'
-pub(crate) const Z_POLYD: &str = "z_polyd";
+pub const Z_POLYD: &str = "z_polyd";
 /// Barycentric weights over domain D
 pub const BAR_WTS: &str = "bar_wts";
 /// Barycentric weights over domain D'
