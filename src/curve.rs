@@ -49,7 +49,8 @@ impl CurvePoint {
         }
     }
 
-    pub(crate) fn to_bytes(self) -> CompressedCurvePoint {
+    /// Serialize CurvePoint to 30 byte array
+    pub fn to_bytes(self) -> CompressedCurvePoint {
         unsafe {
             let pt = self.0;
             let mut dst = [0u8; 30];
@@ -58,7 +59,8 @@ impl CurvePoint {
         }
     }
 
-    pub(crate) fn from_bytes(src: &mut CompressedCurvePoint) -> CurvePoint {
+    /// Deserialize CurvePoint from 30 byte array
+    pub fn from_bytes(src: &mut CompressedCurvePoint) -> CurvePoint {
         unsafe {
             let mut pt2 = xsk233_neutral;
             let success = xs233_sys::xsk233_decode(&mut pt2, src.as_mut_ptr() as *mut c_void);

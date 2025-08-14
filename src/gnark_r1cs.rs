@@ -21,6 +21,7 @@
 
 use blake3::Hasher;
 use num_bigint::BigUint;
+use num_traits::cast::FromPrimitive;
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     scope,
@@ -29,7 +30,6 @@ use std::{
     fs::File,
     io::{self, BufReader, Read},
 };
-use num_traits::cast::FromPrimitive;
 
 const BYTES: usize = 32;
 
@@ -447,11 +447,11 @@ mod test {
     use crate::artifacts::{R1CS_CONSTRAINTS_FILE, R1CS_WITNESS_FILE, TREE_2N};
     use crate::ec_fft::get_both_domains;
 
-    use crate::gnark_r1cs::{load_witness_from_file, sp1_generate_scalar_from_raw_public_input};
     use crate::gnark_r1cs::{
         ReadFrom, Vector, gnark_element_to_fr, load_sparse_r1cs_from_file,
         sparse_verify_r1cs::check_row,
     };
+    use crate::gnark_r1cs::{load_witness_from_file, sp1_generate_scalar_from_raw_public_input};
 
     use crate::curve::Fr;
     use crate::tree_io::read_minimal_fftree_from_file;
