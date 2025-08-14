@@ -4,7 +4,7 @@ use crate::artifacts::{
     BAR_WTS, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1, SRS_G_K_2, SRS_G_M, SRS_G_Q, TREE_2N,
     Z_POLY, Z_VALS2_INV,
 };
-use crate::curve::{CompressedCurvePoint, CurvePoint, Fr, multi_scalar_mul};
+use crate::curve::{CompressedCurvePoint, CurvePoint, Fr, FrBits, multi_scalar_mul};
 use crate::ec_fft::{
     build_sect_ecfft_tree, evaluate_poly_at_alpha_using_barycentric_weights, get_both_domains,
 };
@@ -42,9 +42,9 @@ pub struct Proof {
     /// kzg_k
     pub kzg_k: CompressedCurvePoint,
     /// a0
-    pub a0: Fr,
+    pub a0: FrBits,
     /// b0
-    pub b0: Fr,
+    pub b0: FrBits,
 }
 
 /// Contains transcript necessary to obtain Fiat-Shamir challenge.
@@ -631,8 +631,8 @@ impl Proof {
         Self {
             commit_p: commit_p.to_bytes(),
             kzg_k: kzg_k.to_bytes(),
-            a0,
-            b0,
+            a0: FrBits::from_fr(a0),
+            b0: FrBits::from_fr(b0),
         }
     }
 }

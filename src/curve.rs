@@ -2,12 +2,14 @@
 
 // `unexpected_cfgs` allowed to appease warning thrown by MontConfig macro
 #![allow(unexpected_cfgs)]
-use ark_ff::PrimeField;
 use ark_ff::fields::{Fp256, MontBackend, MontConfig};
+use ark_ff::{One, PrimeField, Zero};
+use num_bigint::BigUint;
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
 use std::os::raw::c_void;
+use std::str::FromStr;
 use xs233_sys::{xsk233_add, xsk233_generator, xsk233_neutral, xsk233_point};
 
 /// FqConfig for Scalar Field of the curve
@@ -18,6 +20,44 @@ pub struct FqConfig;
 
 /// Represents a scalar field element
 pub type Fr = Fp256<MontBackend<FqConfig, 4>>;
+
+#[derive(Debug, Clone, Copy)]
+/// 232-bit Serialized Fr
+pub struct FrBits(pub [bool; 232]);
+
+impl FrBits {
+    /// serialize fr
+    pub fn from_fr(p: Fr) -> Self {
+        let n: BigUint = p.into();
+        let bytes = n.to_bytes_le();
+        let mut bits = [false; 232];
+        for i in 0..232 {
+            let byte = if i / 8 < bytes.len() { bytes[i / 8] } else { 0 };
+            let r = (byte >> (i % 8)) & 1;
+            bits[i] = r != 0;
+        }
+        FrBits(bits)
+    }
+
+    /// deserialize to Fr and return is_valid
+    pub fn to_fr(&self) -> (Fr, bool) {
+        let bits = self.0;
+        let mut n = BigUint::zero();
+        for (i, &bit) in bits.iter().enumerate() {
+            if bit {
+                n |= BigUint::one() << i;
+            }
+        }
+        let nmod = BigUint::from_str(
+            "3450873173395281893717377931138512760570940988862252126328087024741343",
+        )
+        .unwrap();
+        if n >= nmod {
+            return (nmod.into(), false);
+        }
+        (n.into(), true)
+    }
+}
 
 /// Represents a point in curve
 #[derive(Debug, Clone, Copy)]
@@ -60,12 +100,11 @@ impl CurvePoint {
     }
 
     /// Deserialize CurvePoint from 30 byte array
-    pub fn from_bytes(src: &mut CompressedCurvePoint) -> CurvePoint {
+    pub fn from_bytes(src: &mut CompressedCurvePoint) -> (CurvePoint, bool) {
         unsafe {
             let mut pt2 = xsk233_neutral;
             let success = xs233_sys::xsk233_decode(&mut pt2, src.as_mut_ptr() as *mut c_void);
-            assert!(success != 0);
-            CurvePoint(pt2)
+            (CurvePoint(pt2), success != 0)
         }
     }
 }

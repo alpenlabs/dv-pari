@@ -21,7 +21,6 @@
 
 use blake3::Hasher;
 use num_bigint::BigUint;
-use num_traits::cast::FromPrimitive;
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     scope,
@@ -216,9 +215,9 @@ pub fn sp1_generate_scalar_from_raw_public_input(raw_pub_input: u64) -> Fr {
     fn babybear_bytes_to_bn254(bytes: &[u8; 32]) -> BigUint {
         let mut result = BigUint::ZERO;
         for (idx, byte) in bytes.iter().enumerate() {
-            result *= BigUint::from_u16(256).unwrap(); // shift by 7 bits
+            result *= BigUint::new(vec![256]); // shift by 7 bits
             let masked = if idx < 4 { 0 } else { *byte };
-            result += BigUint::from_u8(masked).unwrap(); // add 7-bit
+            result += BigUint::new(vec![masked as u32]); // add 7-bit
         }
         result
     }
@@ -498,8 +497,8 @@ mod test {
         let fibo_input = [55, 0, 0, 0, 89, 0, 0, 0]; // serialized 10th fibonacci sequence
         let raw_pub_input = u64::from_le_bytes(fibo_input);
         let res_fr = sp1_generate_scalar_from_raw_public_input(raw_pub_input);
-        let wit_fr: Vec<Fr> = load_witness_from_file(&format!("srs_secu/{R1CS_WITNESS_FILE}"));
 
+        let wit_fr: Vec<Fr> = load_witness_from_file(&format!("srs_secu/{R1CS_WITNESS_FILE}"));
         assert_eq!(res_fr, wit_fr[2]); // should be equal to the witness that is expected by R1CS
         // In this way we ensure verifier can validate bridge public inputs (e.g. deposit_index) with r1cs constraints
         // [1, 7527402554317099476086310993202889463751940730940407143885949231928, 19542051593079647282099705468191403958371264520862632234952945594121,

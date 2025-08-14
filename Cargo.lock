@@ -313,7 +313,6 @@ dependencies = [
  "ecfft",
  "memmap2",
  "num-bigint",
- "num-traits",
  "rand_chacha",
  "rayon",
  "xs233-sys",

@@ -549,8 +549,9 @@ impl SRS {
         proof: &Proof,
     ) -> bool {
         // Because winternitz signed data is compressed point form (30 bytes), we need to decompress it
-        let proof_commit_p = CurvePoint::from_bytes(&mut proof.commit_p.clone());
-        let proof_kzg_k = CurvePoint::from_bytes(&mut proof.kzg_k.clone());
+        let (proof_commit_p, is_commit_p_valid) =
+            CurvePoint::from_bytes(&mut proof.commit_p.clone());
+        let (proof_kzg_k, is_kzg_k_valid) = CurvePoint::from_bytes(&mut proof.kzg_k.clone());
 
         const G_KS: [&str; 3] = [SRS_G_K_0, SRS_G_K_1, SRS_G_K_2];
         let fs_challenge_alpha = {
@@ -593,14 +594,19 @@ impl SRS {
 
         let i0 = evaluate_monomial_basis_poly(public_inputs, fs_challenge_alpha);
 
-        let r0 = proof.a0 * proof.b0 - i0;
+        let (proof_a0, is_a0_valid) = proof.a0.to_fr();
+        let (proof_b0, is_b0_valid) = proof.b0.to_fr();
+        let r0 = proof_a0 * proof_b0 - i0;
         // Step 3. Compute u₀ and v₀
         let delta2 = secrets.delta.square();
-        let u0 = (proof.a0 + secrets.delta * proof.b0 + delta2 * r0) * secrets.epsilon;
+        let u0 = (proof_a0 + secrets.delta * proof_b0 + delta2 * r0) * secrets.epsilon;
         let v0 = (secrets.tau - fs_challenge_alpha) * secrets.epsilon;
         // Step 4. Check v₀·K == P - u₀·G;
         let lhs = multi_scalar_mul(&[v0, u0], &[proof_kzg_k, CurvePoint::generator()]);
         let rhs = proof_commit_p;
-        lhs == rhs
+
+        let all_inputs_valid = is_a0_valid & is_b0_valid & is_commit_p_valid & is_kzg_k_valid;
+        let valid_proof = lhs == rhs;
+        valid_proof & all_inputs_valid
     }
 }

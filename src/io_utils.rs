@@ -219,7 +219,8 @@ pub(crate) fn read_point_vec_from_file<P: AsRef<Path>>(path: P) -> anyhow::Resul
         .map(|chunk| {
             let cursor = Cursor::new(chunk);
             let mut x: [u8; 30] = cursor.into_inner().try_into().unwrap();
-            let pt = CurvePoint::from_bytes(&mut x);
+            let (pt, valid) = CurvePoint::from_bytes(&mut x);
+            assert!(valid);
             Ok(pt)
         })
         .collect();
