@@ -35,7 +35,7 @@ use crate::gnark_r1cs::{R1CSInstance, evaluate_monomial_basis_poly};
 ///
 /// We require the proof to be of small size, so we represent the data in compressed form
 /// Total Size = 2 * (Compressed Curve Point) 30 bytes + 3 * (Scalr Field ELement) 29 bytes = 147 bytes
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Proof {
     /// commit_p
     pub commit_p: CompressedCurvePoint,
@@ -633,6 +633,88 @@ impl Proof {
             kzg_k: kzg_k.to_bytes(),
             a0: FrBits::from_fr(a0),
             b0: FrBits::from_fr(b0),
+        }
+    }
+
+    /// serialize Proof
+    pub fn to_bits(&self) -> Vec<bool> {
+        fn u8_to_bits_le(n: u8) -> [bool; 8] {
+            let v: Vec<bool> = (0..8).map(|i| (n >> i) & 1 != 0).collect();
+            v.try_into().unwrap()
+        }
+
+        let mut commit_p: Vec<bool> = self
+            .commit_p
+            .iter()
+            .flat_map(|x| u8_to_bits_le(*x).to_vec())
+            .collect();
+        let mut kzg_k: Vec<bool> = self
+            .kzg_k
+            .iter()
+            .flat_map(|x| u8_to_bits_le(*x).to_vec())
+            .collect();
+        let mut a0 = self.a0.0.to_vec();
+        let mut b0 = self.b0.0.to_vec();
+
+        let mut witness: Vec<bool> = Vec::new();
+
+        witness.append(&mut commit_p);
+        witness.append(&mut kzg_k);
+        witness.append(&mut a0);
+        witness.append(&mut b0);
+
+        witness
+    }
+
+    /// deserialize Proof
+    pub fn from_bits(bits: Vec<bool>) -> Proof {
+        fn bits_le_to_u8(bits: &[bool]) -> u8 {
+            let mut n: u8 = 0;
+            for (i, &bit) in bits.iter().enumerate() {
+                if bit {
+                    n |= 1 << i;
+                }
+            }
+            n
+        }
+
+        let mut offset = 0;
+
+        // commit_p: 30 bytes = 240 bits
+        let commit_p: [u8; 30] = {
+            let mut arr = [0u8; 30];
+            for arr_i in &mut arr {
+                *arr_i = bits_le_to_u8(&bits[offset..offset + 8]);
+                offset += 8;
+            }
+            arr
+        };
+
+        // kzg_k: 30 bytes = 240 bits
+        let kzg_k: [u8; 30] = {
+            let mut arr = [0u8; 30];
+            for arr_i in &mut arr {
+                *arr_i = bits_le_to_u8(&bits[offset..offset + 8]);
+                offset += 8;
+            }
+            arr
+        };
+
+        // a0: read the same number of bits as frref_to_bits(&a0) would output
+        let a0_bit_len = 232; // You must define this to return bit length of a0 field
+        let a0_bits: [bool; 232] = bits[offset..offset + a0_bit_len].try_into().unwrap();
+        let a0 = FrBits(a0_bits);
+        offset += a0_bit_len;
+
+        // b0: same size as a0
+        let b0_bits = bits[offset..offset + a0_bit_len].try_into().unwrap();
+        let b0 = FrBits(b0_bits);
+
+        Proof {
+            commit_p,
+            kzg_k,
+            a0,
+            b0,
         }
     }
 }

@@ -21,7 +21,7 @@ pub struct FqConfig;
 /// Represents a scalar field element
 pub type Fr = Fp256<MontBackend<FqConfig, 4>>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// 232-bit Serialized Fr
 pub struct FrBits(pub [bool; 232]);
 
