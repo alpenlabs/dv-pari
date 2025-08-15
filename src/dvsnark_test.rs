@@ -166,7 +166,7 @@ mod tests {
 
         // Designated verifier verifies proof
         let public_inputs: Vec<Fr> = vec![o, w];
-        let result = SRS::verify("srs_verifier_small_tmp", trapdoor, &public_inputs, &proof);
+        let result = SRS::verify(trapdoor, &public_inputs, &proof);
         assert!(
             result,
             "Verification should succeed for valid multi-constraint witness"
@@ -221,7 +221,7 @@ mod tests {
         let now = Instant::now();
 
         // Designated verifier verifies proof
-        let result = SRS::verify(cache_dir, trapdoor, &public_inputs, &proof);
+        let result = SRS::verify(trapdoor, &public_inputs, &proof);
         let elapsed = now.elapsed();
         println!("Took {} seconds to verify proof", elapsed.as_secs());
 

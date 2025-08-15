@@ -10,7 +10,6 @@ use crate::ec_fft::{
     build_sect_ecfft_tree, evaluate_all_lagrange_coeffs_ecfft_with_vanish,
     evaluate_lagrage_over_unified_domain, evaluate_lagrage_over_unified_domain_with_precompute,
     evaluate_lagrange_coeffs_using_precompute, evaluate_vanishing_poly_over_domain,
-    get_both_domains,
 };
 use crate::gnark_r1cs::{
     R1CSInstance, Row, evaluate_monomial_basis_poly, load_sparse_r1cs_from_file,
@@ -19,7 +18,7 @@ use crate::io_utils::{
     read_fr_vec_from_file, read_point_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file,
 };
 use crate::proving::{Proof, Transcript};
-use crate::tree_io::{read_fftree_from_file, read_minimal_fftree_from_file, write_fftree_to_file};
+use crate::tree_io::{read_fftree_from_file, write_fftree_to_file};
 use anyhow::{Context, Result};
 use ark_ff::{Field, One, Zero};
 use ark_poly::Polynomial;
@@ -529,7 +528,6 @@ impl SRS {
 
     /// verify
     pub fn verify(
-        cache_dir: &str,
         secrets: Trapdoor,
         public_inputs: &[Fr], // See: test_public_inputs_hash to understand how bridge public inputs will be passed to this function later
         proof: &Proof,
@@ -539,34 +537,18 @@ impl SRS {
             CurvePoint::from_bytes(&mut proof.commit_p.clone());
         let (proof_kzg_k, is_kzg_k_valid) = CurvePoint::from_bytes(&mut proof.kzg_k.clone());
 
-        const G_KS: [&str; 3] = [SRS_G_K_0, SRS_G_K_1, SRS_G_K_2];
         let fs_challenge_alpha = {
             let mut transcript = Transcript::default();
             {
-                let g_m = read_point_vec_from_file(format!("{cache_dir}/{SRS_G_M}")).unwrap();
-                let g_q = read_point_vec_from_file(format!("{cache_dir}/{SRS_G_Q}")).unwrap();
-                let g_k: Vec<Vec<CurvePoint>> = (0..3)
-                    .map(|i| read_point_vec_from_file(format!("{cache_dir}/{}", G_KS[i])).unwrap())
-                    .collect();
-                // also include g_k4
-                let srs = SRS {
-                    g_m,
-                    g_q,
-                    g_k: g_k.try_into().unwrap(),
+                // dummy srs
+                let empty_srs = SRS {
+                    g_m: vec![],
+                    g_q: vec![],
+                    g_k: [vec![], vec![], vec![]],
                 };
-                transcript.srs_hash(&srs);
+                transcript.srs_hash(&empty_srs);
             }
-            let tree2n: FFTree<Fr> =
-                read_minimal_fftree_from_file(Path::new(&format!("{cache_dir}/{TREE_2N}")))
-                    .unwrap();
-
-            let doms = &get_both_domains(&tree2n)[0];
-
-            let inst = R1CSInstance::initialize_with_vandermode_matrix_for_public_input_poly(
-                &format!("{cache_dir}/{R1CS_CONSTRAINTS_FILE}"),
-                doms,
-                public_inputs.len(),
-            );
+            let inst = R1CSInstance { num_constraints: 0, num_public_inputs: 0, rows: vec![], coeffs: vec![] };
 
             transcript.circuit_info_hash(&inst);
             // The above two hashes is known at compile time and as such can be hardcoded
