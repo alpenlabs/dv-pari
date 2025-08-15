@@ -548,7 +548,12 @@ impl SRS {
                 };
                 transcript.srs_hash(&empty_srs);
             }
-            let inst = R1CSInstance { num_constraints: 0, num_public_inputs: 0, rows: vec![], coeffs: vec![] };
+            let inst = R1CSInstance {
+                num_constraints: 0,
+                num_public_inputs: 0,
+                rows: vec![],
+                coeffs: vec![],
+            };
 
             transcript.circuit_info_hash(&inst);
             // The above two hashes is known at compile time and as such can be hardcoded
