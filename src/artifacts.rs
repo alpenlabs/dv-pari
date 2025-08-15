@@ -14,11 +14,16 @@
 //! Contains G_Q, G_M, G_K_{i}
 //! These files depend upon the specific setup - chosen trapdoors and r1cs constraints.
 //! These are provided by the designated verifier to the prover, each file is around 270 MB for our use case.
-pub(crate) const SRS_G_Q: &str = "g_q";
-pub(crate) const SRS_G_M: &str = "g_m";
-pub(crate) const SRS_G_K_0: &str = "g_k_0";
-pub(crate) const SRS_G_K_1: &str = "g_k_1";
-pub(crate) const SRS_G_K_2: &str = "g_k_2";
+/// G_Q
+pub const SRS_G_Q: &str = "g_q";
+/// G_M
+pub const SRS_G_M: &str = "g_m";
+/// G_K_0
+pub const SRS_G_K_0: &str = "g_k_0";
+/// G_K_1
+pub const SRS_G_K_1: &str = "g_k_1";
+/// G_K_2
+pub const SRS_G_K_2: &str = "g_k_2";
 
 // FFTREE_OVER_DOMAIN:
 // Instance of ecfft::FFTree<Fr> which contains fields necessary for efficient polynomial operation.
