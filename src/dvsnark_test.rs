@@ -154,12 +154,18 @@ mod tests {
         };
 
         // Run SRS setup assuming nothing is precomputed
-        let _ = SRS::verifier_runs_setup(trapdoor, Path::new(cache_dir), public_inputs.len(), true)
-            .unwrap();
+        let _ = SRS::verifier_runs_setup(
+            trapdoor,
+            Path::new(cache_dir),
+            public_inputs.len(),
+            true,
+            true,
+        )
+        .unwrap();
 
         // Prover precomputes stuff he needs for proving
         // These precomputes can be reused for different proof generations
-        prover_prepares_precomputes("srs_verifier_small_tmp").unwrap();
+        prover_prepares_precomputes("srs_verifier_small_tmp", true).unwrap();
 
         // Prover generates proof
         let proof = Proof::prove("srs_verifier_small_tmp", public_inputs.clone(), &witness);
@@ -200,15 +206,21 @@ mod tests {
         };
 
         // verifier runs setup assuming `artifacts::DOMAIN_SPECIFIC_PRECOMPUTES` are present inside `cache_dir`
-        let _ = SRS::verifier_runs_setup(trapdoor, Path::new(cache_dir), num_public_inputs, false)
-            .unwrap();
+        let _ = SRS::verifier_runs_setup(
+            trapdoor,
+            Path::new(cache_dir),
+            num_public_inputs,
+            false,
+            false,
+        )
+        .unwrap();
 
         let elapsed = now.elapsed();
         println!("Took {} seconds to setup SRS", elapsed.as_secs());
 
         // prover generates precomputes and also downloads `artifacts::DOMAIN_SPECIFIC_PRECOMPUTES` inside his `cache_dir`
         let now = Instant::now();
-        prover_prepares_precomputes(cache_dir).unwrap();
+        prover_prepares_precomputes(cache_dir, false).unwrap();
         let elapsed = now.elapsed();
         println!("Took {} seconds to precompute SRS", elapsed.as_secs());
 

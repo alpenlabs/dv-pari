@@ -194,12 +194,19 @@ fn compute_srs_matrices(
 }
 
 impl SRS {
-    /// verifier_runs_setup
+    /// Verifier runs SRS setup
+    /// Fields
+    ///     # trapdoor: Trapdoor secrets
+    ///     # cache_dir: path verifier references to read and write data
+    ///     # num_public_inputs: number of public inputs
+    ///     # is_fresh_setup: Whether verifier has downloaded some precomputed data or wants to compute everything on his own
+    ///     # validate_precompute: whether verifier trusts the provider or he wants to validate the data despite having the claimed shasum of the precomputed content
     pub fn verifier_runs_setup(
         trapdoor: Trapdoor,
         cache_dir: &Path,
         num_public_inputs: usize,
         is_fresh_setup: bool,
+        validate_precompute: bool,
     ) -> Result<Self> {
         std::fs::create_dir_all(cache_dir) // ensure directory exists
             .with_context(|| format!("creating {}", cache_dir.display()))?;
@@ -257,6 +264,24 @@ impl SRS {
                     // cached file should exist
                     let z_poly_coeffs = read_fr_vec_from_file(cache_dir.join(zpolyf))
                         .with_context(|| format!("expected pre‑computed {:?}", zpolyf))?;
+
+                    if validate_precompute {
+                        // Ensure downloaded vanishing polynomial was valid
+                        let all_coeffs_zero =
+                            z_poly_coeffs.iter().filter(|x| **x == Fr::zero()).count();
+                        assert_ne!(
+                            all_coeffs_zero,
+                            z_poly_coeffs.len(),
+                            "all polynomial coefficients were zero"
+                        );
+                        let evs = evaluate_vanishing_poly_at_domain(&z_poly_coeffs, &treen);
+                        let not_zero_ev = evs.iter().find(|x| **x != Fr::zero());
+                        assert!(
+                            not_zero_ev.is_none(),
+                            "vanishing poly does not evaluate to zero at all points in domain"
+                        );
+                    }
+
                     let vanish_poly = DensePolynomial {
                         coeffs: z_poly_coeffs,
                     };

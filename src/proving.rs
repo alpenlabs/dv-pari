@@ -2,13 +2,15 @@
 //!
 use crate::artifacts::{
     BAR_WTS, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1, SRS_G_K_2, SRS_G_M, SRS_G_Q, TREE_2N,
-    Z_POLY, Z_VALS2_INV,
+    TREE_N, TREE_ND, Z_POLY, Z_VALS2_INV,
 };
 use crate::curve::{CompressedCurvePoint, CurvePoint, Fr, FrBits, multi_scalar_mul};
 use crate::ec_fft::{
-    build_sect_ecfft_tree, evaluate_poly_at_alpha_using_barycentric_weights, get_both_domains,
+    build_sect_ecfft_tree, compute_barycentric_weights,
+    evaluate_poly_at_alpha_using_barycentric_weights, evaluate_vanishing_poly_at_domain,
+    get_both_domains,
 };
-use crate::io_utils::{read_fr_vec_from_file, read_point_vec_from_file};
+use crate::io_utils::{read_fr_vec_from_file, read_point_vec_from_file, write_fr_vec_to_file};
 use crate::srs::SRS;
 use crate::tree_io::{read_fftree_from_file, read_minimal_fftree_from_file, write_fftree_to_file};
 use anyhow::{Context, Result};
@@ -195,7 +197,10 @@ impl Transcript {
 }
 
 /// Prover `Precomputes` received from third party that would have otherwise taken long to compute oneself.
-// Computes fields like tree2n, barycentric_weights that are easy enough to compute
+/// 
+/// Fields
+///     # cache_dir: path prover references to read and write data
+///     # validate_precompute: whether prover trusts the provider or he wants to validate the data despite the precomputed content having the claimed shasum
 /// Contains data precomputed by the prover to accelerate proof generation.
 ///
 /// These objects depend only on the cryptographic domain and can be reused
@@ -205,7 +210,7 @@ impl Transcript {
 /// it takes O(N log^2 N) for N=2^23. Generating `tree2n` is more lenient because
 /// we need an FFTree with only fields necessary for `FFTree::extend()`
 ///
-/// # Fields
+/// # Precomputed Data
 ///
 /// * `tree2n`: An `FFTree` over the domain $D \cup D'$.
 /// * `vanishing_poly`: The vanishing polynomial over the domain $D$.
@@ -216,7 +221,10 @@ impl Transcript {
 /// at random point `challenge` in O(N) time using function `evaluate_at_alpha_from_barycentric_weights`
 /// `z_vals2inv` is used to compute quotient polynomial.
 /// `tree2n` is used to call extend() and get the domain.
-pub fn prover_prepares_precomputes(cache_dir: impl AsRef<Path>) -> Result<()> {
+pub fn prover_prepares_precomputes(
+    cache_dir: impl AsRef<Path>,
+    validate_precompute: bool,
+) -> Result<()> {
     let cache_dir = cache_dir.as_ref();
     std::fs::create_dir_all(cache_dir)
         .with_context(|| format!("creating cache dir {}", cache_dir.display()))?;
@@ -227,25 +235,29 @@ pub fn prover_prepares_precomputes(cache_dir: impl AsRef<Path>) -> Result<()> {
             .with_context(|| format!("expected pre‑computed {:?}", path.display()))
     };
 
+    // vanishing polynomial must exist
     let zpoly = must_read(Z_POLY)?;
     let num_constraints = zpoly.len() - 1;
 
     let n_log = num_constraints.ilog2() as usize;
 
-    let load_tree = |name: &str, shift_to_odd_domain: bool| -> Result<FFTree<Fr>> {
+    let load_tree = |name: &str,
+                     shift_to_odd_domain: bool,
+                     domain_len: usize,
+                     minimal_tree: bool|
+     -> Result<FFTree<Fr>> {
         let path = cache_dir.join(name);
         if path.exists() {
             println!("Reading {:?} …", path.display());
             read_fftree_from_file(&path)
         } else {
             println!("Computing {:?} …", path.display());
-            let minimal_tree = true;
             // We require the tree to only include fields necessary for `FFTree::extend()`, so we load a `minimal` tree
             // This puts lesser memory requirement
             let tree = build_sect_ecfft_tree(
-                num_constraints * 2,
+                domain_len,
                 shift_to_odd_domain,
-                n_log + 1,
+                n_log + 1, // log(2*num_constraints)
                 minimal_tree,
             )
             .unwrap();
@@ -258,17 +270,55 @@ pub fn prover_prepares_precomputes(cache_dir: impl AsRef<Path>) -> Result<()> {
     let shift_to_odd_domain = false;
     // For 2n sized domain, we generate regular FFTree with regular structure to FFTree::leaves
     // so shift_to_odd_domain is false
-    let _ = load_tree(TREE_2N, shift_to_odd_domain)?; // 2·n domain
+    let _ = load_tree(TREE_2N, shift_to_odd_domain, num_constraints * 2, true)?; // 2·n domain
 
-    let _ = must_read(BAR_WTS)?;
-    let _ = must_read(Z_VALS2_INV)?;
+    let zpoly = DensePolynomial { coeffs: zpoly };
+    let cache_exists = cache_dir.join(BAR_WTS).exists() && cache_dir.join(Z_VALS2_INV).exists();
+    if !cache_exists {
+        if !cache_dir.join(BAR_WTS).exists() {
+            println!("prover_prepares_precomputes evaluate_vanishing_poly_at_domain");
+            let treen = load_tree(TREE_N, false, num_constraints, false)?;
+            let barycentric_weights = compute_barycentric_weights(&treen, &zpoly).unwrap();
+            write_fr_vec_to_file(cache_dir.join(BAR_WTS), &barycentric_weights)?;
 
-    // TODO: @manishbista28
-    // add functions to verify that the precomputed values obtained from a third party were valid;
-    // The received values that were precomputed and made available by a third party include `vanishing_poly`,
-    // `barycentric_weights` and `z_vals2inv`
-    // vanishing_poly: Verify by ensuring it is of degree m+1 and ensuring that it evaluates to zero at all points in domain D
-    // barycentric_weights and z_vals2inv can be computed by the prover himself given `vanishing_poly` because they don't take much time
+            if validate_precompute {
+                // Validate Vanishing Polynomial where treen has been built
+                let all_coeffs_zero = zpoly.coeffs.iter().filter(|x| **x == Fr::zero()).count();
+                assert_ne!(
+                    all_coeffs_zero,
+                    zpoly.coeffs.len(),
+                    "all polynomial coefficients were zero"
+                );
+                let evs = evaluate_vanishing_poly_at_domain(&zpoly, &treen);
+                let not_zero_ev = evs.iter().find(|x| **x != Fr::ZERO);
+                assert!(
+                    not_zero_ev.is_none(),
+                    "vanishing poly does not evaluate to zero at all points in domain"
+                );
+            }
+        }
+        if !cache_dir.join(Z_VALS2_INV).exists() {
+            println!("prover_prepares_precomputes evaluate_vanishing_poly_at_domain");
+            let treend = load_tree(TREE_ND, true, num_constraints, false)?;
+            let mut z_vals = evaluate_vanishing_poly_at_domain(&zpoly, &treend);
+            ark_ff::batch_inversion(&mut z_vals);
+            write_fr_vec_to_file(cache_dir.join(Z_VALS2_INV), &z_vals)?;
+        }
+    } else if cache_exists && validate_precompute {
+        let treen = load_tree(TREE_N, false, num_constraints, false)?;
+        let all_coeffs_zero = zpoly.coeffs.iter().filter(|x| **x == Fr::zero()).count();
+        assert_ne!(
+            all_coeffs_zero,
+            zpoly.coeffs.len(),
+            "all polynomial coefficients were zero"
+        );
+        let evs = evaluate_vanishing_poly_at_domain(&zpoly, &treen);
+        let not_zero_ev = evs.iter().find(|x| **x != Fr::ZERO);
+        assert!(
+            not_zero_ev.is_none(),
+            "vanishing poly does not evaluate to zero at all points in domain"
+        );
+    };
 
     Ok(())
 }
