@@ -6,10 +6,9 @@ use crate::artifacts::{
 };
 use crate::curve::{CurvePoint, Fr, multi_scalar_mul, point_scalar_mul_gen};
 use crate::ec_fft::{
-    build_sect_ecfft_tree, compute_barycentric_weights,
-    compute_lagrange_basis_at_tau_over_unified_domain,
-    compute_lagrange_basis_at_tau, evaluate_vanishing_poly_at_domain,
-    compute_vanishing_polynomial,
+    build_sect_ecfft_tree, compute_barycentric_weights, compute_lagrange_basis_at_tau,
+    compute_lagrange_basis_at_tau_over_unified_domain, compute_vanishing_polynomial,
+    evaluate_vanishing_poly_at_domain,
 };
 use crate::gnark_r1cs::{
     R1CSInstance, Row, evaluate_monomial_basis_poly, load_sparse_r1cs_from_file,

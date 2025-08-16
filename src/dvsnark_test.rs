@@ -154,9 +154,8 @@ mod tests {
         };
 
         // Run SRS setup assuming nothing is precomputed
-        let _ =
-            SRS::verifier_runs_setup(trapdoor, Path::new(cache_dir), public_inputs.len(), true)
-                .unwrap();
+        let _ = SRS::verifier_runs_setup(trapdoor, Path::new(cache_dir), public_inputs.len(), true)
+            .unwrap();
 
         // Prover precomputes stuff he needs for proving
         // These precomputes can be reused for different proof generations

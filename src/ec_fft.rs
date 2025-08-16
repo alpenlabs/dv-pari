@@ -418,7 +418,6 @@ pub(crate) fn evaluate_vanishing_poly_at_domain(z_poly: &[Fr], treen: &FFTree<Fr
     tree_ev
 }
 
-
 #[allow(clippy::too_many_arguments)]
 // we additionally use vanishing polynomial evaluations `z_poly_dom2` and `z_poly2_dom`
 // for lesser compute cost
@@ -654,7 +653,8 @@ mod test {
     use crate::artifacts::TREE_2N;
     use crate::curve::Fr;
     use crate::ec_fft::{
-        compute_barycentric_weights, compute_lagrange_basis_at_tau_over_unified_domain, evaluate_vanishing_poly_at_domain, compute_vanishing_polynomial
+        compute_barycentric_weights, compute_lagrange_basis_at_tau_over_unified_domain,
+        compute_vanishing_polynomial, evaluate_vanishing_poly_at_domain,
     };
     use crate::tree_io::{read_fftree_from_file, write_fftree_to_file};
 
@@ -709,12 +709,7 @@ mod test {
         let vanishing_poly = compute_vanishing_polynomial(&fftree_2n).unwrap();
         let barycentric_weight = compute_barycentric_weights(fftree_n, &vanishing_poly).unwrap();
 
-        match compute_lagrange_basis_at_tau(
-            fftree_n,
-            &vanishing_poly,
-            tau,
-            &barycentric_weight,
-        ) {
+        match compute_lagrange_basis_at_tau(fftree_n, &vanishing_poly, tau, &barycentric_weight) {
             Ok(lagrange_basis_at_tau) => {
                 if n > 0 {
                     // Only verify if domain and coeffs are non-empty
@@ -808,13 +803,9 @@ mod test {
         let vanishing_poly = compute_vanishing_polynomial(&fftree2n).unwrap();
         let barycentric_weight = compute_barycentric_weights(fftree, &vanishing_poly).unwrap();
 
-        let lagrange_basis_at_tau = compute_lagrange_basis_at_tau(
-            fftree,
-            &vanishing_poly,
-            tau,
-            &barycentric_weight,
-        )
-        .expect("ECFFT routine failed");
+        let lagrange_basis_at_tau =
+            compute_lagrange_basis_at_tau(fftree, &vanishing_poly, tau, &barycentric_weight)
+                .expect("ECFFT routine failed");
 
         // --- slow reference -----------------------------------------------
         let slow = lagrange_coeffs_reference(domain_s, tau);
@@ -1004,30 +995,33 @@ mod test {
         let z_poly = compute_vanishing_polynomial(&tree2n).unwrap();
         let treen = tree2n.subtree_with_size(num_constraints);
         let bar_wts = compute_barycentric_weights(treen, &z_poly).unwrap();
-        let l_tau =
-            compute_lagrange_basis_at_tau(treen, &z_poly, tau, &bar_wts).unwrap();
+        let l_tau = compute_lagrange_basis_at_tau(treen, &z_poly, tau, &bar_wts).unwrap();
 
         let z_poly2 = compute_vanishing_polynomial(&tree2nd).unwrap();
         let treend = tree2nd.subtree_with_size(num_constraints);
         let bar_wts2 = compute_barycentric_weights(treend, &z_poly2).unwrap();
-        let l_tau2 =
-            compute_lagrange_basis_at_tau(treend, &z_poly2, tau, &bar_wts2).unwrap();
+        let l_tau2 = compute_lagrange_basis_at_tau(treend, &z_poly2, tau, &bar_wts2).unwrap();
 
         let z_polyl = compute_vanishing_polynomial(&tree4n).unwrap();
         let bar_wtsl = compute_barycentric_weights(&tree2n, &z_polyl).unwrap();
 
-        let l_tau_ref =
-            compute_lagrange_basis_at_tau(&tree2n, &z_polyl, tau, &bar_wtsl).unwrap();
+        let l_tau_ref = compute_lagrange_basis_at_tau(&tree2n, &z_polyl, tau, &bar_wtsl).unwrap();
 
         let mut z_poly_dom2 = evaluate_vanishing_poly_at_domain(&z_poly, treend);
         ark_ff::batch_inversion(&mut z_poly_dom2);
-    
+
         let mut z_poly2_dom = evaluate_vanishing_poly_at_domain(&z_poly2, treen);
         ark_ff::batch_inversion(&mut z_poly2_dom);
 
-        
         let lagrange_out = compute_lagrange_basis_at_tau_over_unified_domain(
-            tau, num_constraints, &l_tau, &l_tau2, &z_poly, &z_poly2, &z_poly_dom2, &z_poly2_dom
+            tau,
+            num_constraints,
+            &l_tau,
+            &l_tau2,
+            &z_poly,
+            &z_poly2,
+            &z_poly_dom2,
+            &z_poly2_dom,
         );
 
         assert_eq!(l_tau_ref, lagrange_out);
@@ -1070,38 +1064,18 @@ mod test {
         let z_poly = compute_vanishing_polynomial(&fftree_2n).unwrap();
         let fftree_n = fftree_2n.subtree_with_size(domain_len / 2);
         let z_s_prime_evals_on_s = compute_barycentric_weights(fftree_n, &z_poly).unwrap();
-        let lag_coeff = compute_lagrange_basis_at_tau(
-            fftree_n,
-            &z_poly,
-            tau,
-            &z_s_prime_evals_on_s,
-        )
-        .unwrap();
+        let lag_coeff =
+            compute_lagrange_basis_at_tau(fftree_n, &z_poly, tau, &z_s_prime_evals_on_s).unwrap();
 
-        let lag_coeff2 = compute_lagrange_basis_at_tau(
-            fftree_n,
-            &z_poly,
-            tau,
-            &z_s_prime_evals_on_s,
-        )
-        .unwrap();
+        let lag_coeff2 =
+            compute_lagrange_basis_at_tau(fftree_n, &z_poly, tau, &z_s_prime_evals_on_s).unwrap();
         assert_eq!(lag_coeff, lag_coeff2);
         let delta = Fr::rand(&mut rng);
-        let lag_coeff3 = compute_lagrange_basis_at_tau(
-            fftree_n,
-            &z_poly,
-            delta,
-            &z_s_prime_evals_on_s,
-        )
-        .unwrap();
+        let lag_coeff3 =
+            compute_lagrange_basis_at_tau(fftree_n, &z_poly, delta, &z_s_prime_evals_on_s).unwrap();
 
-        let lag_coeff4 = compute_lagrange_basis_at_tau(
-            fftree_n,
-            &z_poly,
-            delta,
-            &z_s_prime_evals_on_s,
-        )
-        .unwrap();
+        let lag_coeff4 =
+            compute_lagrange_basis_at_tau(fftree_n, &z_poly, delta, &z_s_prime_evals_on_s).unwrap();
         assert_eq!(lag_coeff3, lag_coeff4);
     }
 
