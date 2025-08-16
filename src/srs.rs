@@ -1,15 +1,15 @@
 //! Setup Phase and Proof Verification
 //!
 use crate::artifacts::{
-    BAR_WTS, BAR_WTSD, L_TAU, L_TAUD, L_TAUL, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1,
-    SRS_G_K_2, SRS_G_M, SRS_G_Q, TREE_2N, TREE_2ND, TREE_N, TREE_ND, Z_POLY, Z_POLYD, Z_VALS2_INV,
-    Z_VALS2D_INV,
+    BAR_WTS, BAR_WTSD, R1CS_CONSTRAINTS_FILE, SRS_G_K_0, SRS_G_K_1, SRS_G_K_2, SRS_G_M, SRS_G_Q,
+    TREE_2N, TREE_2ND, TREE_N, TREE_ND, Z_POLY, Z_POLYD, Z_VALS2_INV, Z_VALS2D_INV,
 };
 use crate::curve::{CurvePoint, Fr, multi_scalar_mul, point_scalar_mul_gen};
 use crate::ec_fft::{
-    build_sect_ecfft_tree, evaluate_all_lagrange_coeffs_ecfft_with_vanish,
-    evaluate_lagrage_over_unified_domain, evaluate_lagrage_over_unified_domain_with_precompute,
-    evaluate_lagrange_coeffs_using_precompute, evaluate_vanishing_poly_over_domain,
+    build_sect_ecfft_tree, compute_barycentric_weights,
+    compute_lagrange_basis_at_tau_over_unified_domain,
+    compute_lagrange_basis_at_tau, evaluate_vanishing_poly_at_domain,
+    compute_vanishing_polynomial,
 };
 use crate::gnark_r1cs::{
     R1CSInstance, Row, evaluate_monomial_basis_poly, load_sparse_r1cs_from_file,
@@ -195,11 +195,12 @@ fn compute_srs_matrices(
 }
 
 impl SRS {
-    /// verifier_runs_fresh_setup
-    pub fn verifier_runs_fresh_setup(
+    /// verifier_runs_setup
+    pub fn verifier_runs_setup(
         trapdoor: Trapdoor,
         cache_dir: &Path,
         num_public_inputs: usize,
+        is_fresh_setup: bool,
     ) -> Result<Self> {
         std::fs::create_dir_all(cache_dir) // ensure directory exists
             .with_context(|| format!("creating {}", cache_dir.display()))?;
@@ -212,301 +213,131 @@ impl SRS {
         let num_constraints = inst.num_constraints;
         let n_log = num_constraints.ilog2() as usize;
 
-        // Trapdoor secrets ---------------------------------------------------
-        let tau = trapdoor.tau;
-        let delta = trapdoor.delta;
-        let epsilon = trapdoor.epsilon;
-        assert!(!epsilon.is_zero(), "ε must be non-zero");
+        // validate trapdoor
+        assert!(!trapdoor.tau.is_zero(), "tau must be non-zero");
+        assert!(!trapdoor.delta.is_zero(), "delta must be non-zero");
+        assert!(!trapdoor.epsilon.is_zero(), "epsilon must be non-zero");
 
-        assert!(!epsilon.is_zero(), "ε must be non‑zero");
-
-        // Helper: read‑or‑build an ECFFT tree --------------------------------
-        let load_tree = |name: &str, odd_leaves: bool| -> Result<FFTree<Fr>> {
+        let load_tree = |name: &str, odd_leaves: bool, num_leaves: usize| -> Result<FFTree<Fr>> {
             let path = cache_dir.join(name);
             if path.exists() {
                 println!("Reading {:?} …", path.display());
                 read_fftree_from_file(&path)
             } else {
                 println!("Computing {:?} …", path.display());
-                let tree = build_sect_ecfft_tree(num_constraints * 2, odd_leaves, n_log + 1, false)
-                    .unwrap();
+                let tree = build_sect_ecfft_tree(num_leaves, odd_leaves, n_log + 1, false).unwrap();
                 write_fftree_to_file(&tree, &path)?;
                 Ok(tree)
             }
         };
 
-        println!("Building ECFFT trees …");
-        let mut tree2n = load_tree(TREE_2N, false)?;
+        let init_tree_and_poly_at_tau =
+            |tree2nf,
+             treenf,
+             zpolyf,
+             barwtsf,
+             odd_leaf|
+             -> Result<(FFTree<Fr>, Vec<Fr>, DensePolynomial<Fr>)> {
+                let (treen, vanishing_poly) = if is_fresh_setup {
+                    let tree = load_tree(tree2nf, odd_leaf, num_constraints * 2).unwrap();
+                    let vanish_poly: DensePolynomial<Fr> = if cache_dir.join(zpolyf).exists() {
+                        // read cached file if it exists from previous run
+                        let zpoly_coeff = read_fr_vec_from_file(cache_dir.join(zpolyf)).unwrap();
+                        DensePolynomial {
+                            coeffs: zpoly_coeff,
+                        }
+                    } else {
+                        // generate fresh
+                        compute_vanishing_polynomial(&tree).unwrap()
+                    };
+                    let tree: FFTree<Fr> = tree.subtree_with_size(num_constraints).clone();
+                    write_fr_vec_to_file(cache_dir.join(zpolyf), &vanish_poly.coeffs).unwrap();
+                    (tree, vanish_poly)
+                } else {
+                    let treen = load_tree(treenf, odd_leaf, num_constraints).unwrap();
+                    // cached file should exist
+                    let z_poly_coeffs = read_fr_vec_from_file(cache_dir.join(zpolyf))
+                        .with_context(|| format!("expected pre‑computed {:?}", zpolyf))?;
+                    let vanish_poly = DensePolynomial {
+                        coeffs: z_poly_coeffs,
+                    };
+                    (treen, vanish_poly)
+                };
 
-        // l_tau and vanishing polynomial over τ ------------------------------
-        let (l_tau, z_poly) = {
-            let path_l = cache_dir.join(L_TAU);
-            let path_z = cache_dir.join(Z_POLY);
+                let barycentric_weights = if cache_dir.join(barwtsf).exists() {
+                    // read from cache if it exists
+                    read_fr_vec_from_file(cache_dir.join(barwtsf)).unwrap()
+                } else {
+                    let barycentric_weights =
+                        compute_barycentric_weights(&treen, &vanishing_poly).unwrap();
+                    write_fr_vec_to_file(cache_dir.join(barwtsf), &barycentric_weights)?;
+                    barycentric_weights
+                };
 
-            if path_l.exists() {
-                (
-                    read_fr_vec_from_file(&path_l)?,
-                    read_fr_vec_from_file(&path_z)?,
+                // instance(trapdoor) specific and used only for setup, so compute everytime
+                let lag_basis = compute_lagrange_basis_at_tau(
+                    &treen,
+                    &vanishing_poly,
+                    trapdoor.tau,
+                    &barycentric_weights,
                 )
-            } else {
-                let res = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&tree2n, tau).unwrap();
-                let (lag_basis, vanish_poly_coeff, barycentric_weights) = (
-                    res.lagrange_coeffs,
-                    res.z_s_coeffs_vec_from_exit,
-                    res.z_s_prime_evals_on_s,
-                );
-                write_fr_vec_to_file(&path_l, &lag_basis)?;
-                write_fr_vec_to_file(&path_z, &vanish_poly_coeff)?;
-                write_fr_vec_to_file(cache_dir.join(BAR_WTS), &barycentric_weights)?;
-                (lag_basis, vanish_poly_coeff)
-            }
-        };
-        let treen = tree2n.subtree_with_size(inst.num_constraints).clone();
-        clear_fftree(&mut tree2n);
+                .unwrap();
 
+                Ok((treen, lag_basis, vanishing_poly))
+            };
+
+        let (mut treen, l_tau, z_poly) =
+            init_tree_and_poly_at_tau(TREE_2N, TREE_N, Z_POLY, BAR_WTS, false)?;
+        let (mut treend, l_taud, z_polyd) =
+            init_tree_and_poly_at_tau(TREE_2ND, TREE_ND, Z_POLYD, BAR_WTSD, true)?;
+
+        println!("r1cs update_to_include_vandermode_matrix_d");
         R1CSInstance::update_to_include_vandermode_matrix_d(
             &mut inst,
             treen.f.leaves(),
             num_public_inputs,
         );
-
-        // l_taud and vanishing polynomial over τ·δ ---------------------------
-        let mut tree2nd = load_tree(TREE_2ND, true)?;
-        let (l_taud, z_polyd) = {
-            let path_l = cache_dir.join(L_TAUD);
-            let path_z = cache_dir.join(Z_POLYD);
-
-            if path_l.exists() {
-                (
-                    read_fr_vec_from_file(&path_l)?,
-                    read_fr_vec_from_file(&path_z)?,
-                )
-            } else {
-                let res = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&tree2nd, tau).unwrap();
-                let (lag_basis, vanish_poly_coeff, barycentric_weights) = (
-                    res.lagrange_coeffs,
-                    res.z_s_coeffs_vec_from_exit,
-                    res.z_s_prime_evals_on_s,
-                );
-                write_fr_vec_to_file(&path_l, &lag_basis)?;
-                write_fr_vec_to_file(&path_z, &vanish_poly_coeff)?;
-                write_fr_vec_to_file(cache_dir.join(BAR_WTSD), &barycentric_weights)?;
-                (lag_basis, vanish_poly_coeff)
-            }
-        };
-
-        let treend = tree2nd.subtree_with_size(inst.num_constraints).clone();
-        clear_fftree(&mut tree2nd);
-
-        // l_taul -------------------------------------------------------------
-        let z_poly_ark = DensePolynomial { coeffs: z_poly };
-        let l_taul = {
-            let path = cache_dir.join(L_TAUL);
-
-            if path.exists() {
-                read_fr_vec_from_file(&path)?
-            } else {
-                let lag_basis = evaluate_lagrage_over_unified_domain(
-                    tau,
-                    &treen,
-                    &l_tau,
-                    &z_poly_ark.coeffs,
-                    &treend,
-                    &l_taud,
-                    &z_polyd,
-                );
-                write_fr_vec_to_file(&path, &lag_basis)?;
-                lag_basis
-            }
-        };
 
         // Pre‑compute domain vanishing polynomials and their inverses ---------
         let prepare_z_inv =
             |fname: &str, poly: &DensePolynomial<Fr>, domain: &FFTree<Fr>| -> Result<Vec<Fr>> {
                 let path = cache_dir.join(fname);
                 if path.exists() {
-                    let mut z_inv = read_fr_vec_from_file(&path)?;
-                    ark_ff::batch_inversion(&mut z_inv);
-                    Ok(z_inv)
+                    let v = read_fr_vec_from_file(&path)?;
+                    Ok(v)
                 } else {
-                    let mut z_vals = evaluate_vanishing_poly_over_domain(poly, domain);
-                    let z_clone = z_vals.clone();
+                    let mut z_vals = evaluate_vanishing_poly_at_domain(poly, domain);
                     ark_ff::batch_inversion(&mut z_vals);
                     write_fr_vec_to_file(&path, &z_vals)?;
-                    Ok(z_clone)
+                    Ok(z_vals)
                 }
             };
 
-        // println!("Preparing z‑inv tables …");
-        let _ = prepare_z_inv(Z_VALS2_INV, &z_poly_ark, &treend)?;
-        let _ = prepare_z_inv(
-            Z_VALS2D_INV,
-            &DensePolynomial {
-                coeffs: z_polyd.clone(),
-            },
-            &treen,
-        )?;
+        println!("computing evaluations of vanishing polynomial on other domain");
+        let mut z_vals2_inv = prepare_z_inv(Z_VALS2_INV, &z_poly, &treend)?;
+        clear_fftree(&mut treend);
 
-        let trapdoor = Trapdoor {
-            tau,
-            delta,
-            epsilon,
-        };
-
-        let srs_mats = compute_srs_matrices(
-            cache_dir,
-            &trapdoor,
-            &z_poly_ark,
-            &inst,
-            &l_tau,
-            &l_taud,
-            &l_taul,
-        )?;
-
-        Ok(Self {
-            g_m: srs_mats.g_m,
-            g_q: srs_mats.g_q,
-            g_k: srs_mats.g_k,
-        })
-    }
-
-    /// verifier_runs_setup_with_precompute
-    pub fn verifier_runs_setup_with_precompute(
-        trapdoor: Trapdoor,
-        cache_dir: impl AsRef<Path>,
-        num_public_inputs: usize,
-    ) -> Result<Self> {
-        let cache_dir = cache_dir.as_ref();
-        std::fs::create_dir_all(cache_dir)
-            .with_context(|| format!("creating {}", cache_dir.display()))?;
-
-        let dump =
-            load_sparse_r1cs_from_file(File::open(cache_dir.join(R1CS_CONSTRAINTS_FILE)).unwrap())
-                .unwrap();
-        let mut inst = R1CSInstance::from_dump(dump.clone(), num_public_inputs);
-
-        let num_constraints = inst.num_constraints;
-        let n_log = num_constraints.ilog2() as usize;
-
-        let tau = trapdoor.tau;
-        let epsilon = trapdoor.epsilon;
-        assert!(!epsilon.is_zero(), "ε must be non-zero");
-
-        // Helper: read-or-build an ECFFT tree for *exact* domain size ---------
-        let load_tree = |name: &str, shift_by_one: bool| -> Result<FFTree<Fr>> {
-            let path = cache_dir.join(name);
-            if path.exists() {
-                println!("Reading {:?} …", path.display());
-                read_fftree_from_file(&path)
-            } else {
-                println!("Computing {:?} …", path.display());
-                let tree =
-                    build_sect_ecfft_tree(num_constraints, shift_by_one, n_log + 1, false).unwrap();
-                write_fftree_to_file(&tree, &path)?;
-                Ok(tree)
-            }
-        };
-
-        let mut treen = load_tree(TREE_N, false)?;
-
-        R1CSInstance::update_to_include_vandermode_matrix_d(
-            &mut inst,
-            treen.f.leaves(),
-            num_public_inputs,
-        );
-
-        // ------------ Helper: read or abort if missing (precompute assumed) --
-        let must_read = |fname: &str| -> Result<Vec<Fr>> {
-            let path = cache_dir.join(fname);
-            read_fr_vec_from_file(&path)
-                .with_context(|| format!("expected pre‑computed {:?}", path.display()))
-        };
-
-        let z_poly = must_read(Z_POLY)?;
-        let mut barycentric_weights = must_read(BAR_WTS)?;
-
-        // l_tau using existing precompute ------------------------------------
-        let l_tau = {
-            let path = cache_dir.join(L_TAU);
-            if path.exists() {
-                read_fr_vec_from_file(&path)?
-            } else {
-                let lag_basis = evaluate_lagrange_coeffs_using_precompute(
-                    &treen,
-                    tau,
-                    z_poly.clone(),
-                    &mut barycentric_weights,
-                )
-                .unwrap();
-                write_fr_vec_to_file(&path, &lag_basis)?;
-                lag_basis
-            }
-        };
-
-        barycentric_weights.clear();
+        let mut z_vals2d_inv = prepare_z_inv(Z_VALS2D_INV, &z_polyd, &treen)?;
         clear_fftree(&mut treen);
 
-        // z_polyd + bar_wtsd --------------------------------------------------
-        let mut treend = load_tree(TREE_ND, true)?;
+        println!("evaluate_lagrage_over_unified_domain_with_precompute");
+        let l_taul = compute_lagrange_basis_at_tau_over_unified_domain(
+            trapdoor.tau,
+            num_constraints,
+            &l_tau,
+            &l_taud,
+            &z_poly,
+            &z_polyd,
+            &z_vals2_inv,
+            &z_vals2d_inv,
+        );
 
-        let z_polyd = must_read(Z_POLYD)?;
-        let mut barycentric_weightsd = must_read(BAR_WTSD)?;
-
-        // l_taud -------------------------------------------------------------
-        let l_taud = {
-            let path = cache_dir.join(L_TAUD);
-            if path.exists() {
-                read_fr_vec_from_file(&path)?
-            } else {
-                let lag_basis = evaluate_lagrange_coeffs_using_precompute(
-                    &treend,
-                    tau,
-                    z_polyd.clone(),
-                    &mut barycentric_weightsd,
-                )
-                .unwrap();
-                write_fr_vec_to_file(&path, &lag_basis)?;
-                lag_basis
-            }
-        };
-        clear_fftree(&mut treend);
-        barycentric_weights.clear();
-
-        let z_poly_ark = DensePolynomial { coeffs: z_poly };
-        let mut z_vals2_inv = must_read(Z_VALS2_INV)?;
-        let mut z_vals2d_inv = must_read(Z_VALS2D_INV)?;
-
-        // l_taul -------------------------------------------------------------
-        let l_taul = {
-            let path = cache_dir.join(L_TAUL);
-            if path.exists() {
-                read_fr_vec_from_file(&path)?
-            } else {
-                let lag_basis = evaluate_lagrage_over_unified_domain_with_precompute(
-                    tau,
-                    num_constraints,
-                    &l_tau,
-                    &l_taud,
-                    &z_poly_ark.coeffs,
-                    &z_polyd,
-                    &z_vals2_inv,
-                    &z_vals2d_inv,
-                );
-                write_fr_vec_to_file(&path, &lag_basis)?;
-                lag_basis
-            }
-        };
         z_vals2_inv.clear();
         z_vals2d_inv.clear();
 
+        println!("compute_srs_matrices");
         let srs_mats = compute_srs_matrices(
-            cache_dir,
-            &trapdoor,
-            &z_poly_ark,
-            &inst,
-            &l_tau,
-            &l_taud,
-            &l_taul,
+            cache_dir, &trapdoor, &z_poly, &inst, &l_tau, &l_taud, &l_taul,
         )?;
 
         Ok(Self {

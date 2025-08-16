@@ -154,8 +154,9 @@ mod tests {
         };
 
         // Run SRS setup assuming nothing is precomputed
-        let _ = SRS::verifier_runs_fresh_setup(trapdoor, Path::new(cache_dir), public_inputs.len())
-            .unwrap();
+        let _ =
+            SRS::verifier_runs_setup(trapdoor, Path::new(cache_dir), public_inputs.len(), true)
+                .unwrap();
 
         // Prover precomputes stuff he needs for proving
         // These precomputes can be reused for different proof generations
@@ -200,7 +201,7 @@ mod tests {
         };
 
         // verifier runs setup assuming `artifacts::DOMAIN_SPECIFIC_PRECOMPUTES` are present inside `cache_dir`
-        let _ = SRS::verifier_runs_setup_with_precompute(trapdoor, cache_dir, num_public_inputs)
+        let _ = SRS::verifier_runs_setup(trapdoor, Path::new(cache_dir), num_public_inputs, false)
             .unwrap();
 
         let elapsed = now.elapsed();

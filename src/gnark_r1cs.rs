@@ -464,12 +464,12 @@ mod test {
     #[test]
     #[ignore]
     fn test_sample_check_r1cs_constraint() {
-        let f = File::open("srs_sect/r1cs_temp").unwrap();
+        let f = File::open(format!("srs_sect/{R1CS_CONSTRAINTS_FILE}")).unwrap();
         let dump = load_sparse_r1cs_from_file(f).unwrap();
 
         println!("size_coeff_table {:?}", dump.coeff_table.len());
 
-        let wit_fr: Vec<Fr> = load_witness_from_file("srs_sect/witness_temp");
+        let wit_fr: Vec<Fr> = load_witness_from_file(&format!("srs_sect/{R1CS_WITNESS_FILE}"));
         println!("wit_fr len {}", wit_fr.len());
         println!("row len {}", dump.indices_rows.len());
 

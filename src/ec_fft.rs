@@ -238,32 +238,18 @@ pub(crate) fn build_sect_ecfft_tree(
     )
 }
 
-pub(crate) struct LagrangeEvals {
-    pub(crate) lagrange_coeffs: Vec<Fr>,
-    pub(crate) z_s_coeffs_vec_from_exit: Vec<Fr>,
-    pub(crate) z_s_prime_evals_on_s: Vec<Fr>,
-}
-
-/// Evaluates all Lagrange coefficients L_{i,S}(tau) for a domain S (leaves of fftree_n)
-/// at a given point tau. Uses fftree.vanish() and fftree.exit().
-/// Complexity: O(N log^2 N), potentially with larger constants due to 2N-sized tree ops.
-// TODO: this function does too many things; break it to compute vanishing polynomial coefficient
-// and also make use of `evaluate_lagrange_coeffs_using_precompute`.
-pub(crate) fn evaluate_all_lagrange_coeffs_ecfft_with_vanish(
+pub(crate) fn compute_vanishing_polynomial(
     fftree_2n: &FFTree<Fr>, // FFTree (size 2*N required for vanishing polynomial)
-    tau: Fr,
-) -> Result<LagrangeEvals, String> {
+) -> Result<DensePolynomial<Fr>, String> {
     let n = fftree_2n.f.leaves().len() / 2;
     assert!(n > 1 && n.is_power_of_two());
 
-    let fftree_n = fftree_2n.subtree_with_size(n);
-    let domain_points_s = fftree_n.f.leaves(); // Domain S, size N
-    assert!(!domain_points_s.contains(&tau));
+    let domain_points_s = fftree_2n.subtree_with_size(n).f.leaves(); // Domain S, size N
 
     // Get evaluations of Z_S(X) on the leaves of fftree_2n (a 2N-point domain).
     // Z_S(X) is the vanishing polynomial for domain_points_s (N roots).
     // fftree_2n.vanish(domain_points_s) computes Z_S(X) and evaluates it on fftree_2n's leaves.
-    println!("  Step a: Computing evaluations of Z_S(X) using fftree_2n.vanish()...");
+    println!("Computing evaluations of Z_S(X) using fftree_2n.vanish()...");
     let z_s_evals_on_s2n = fftree_2n.vanish(domain_points_s);
     if z_s_evals_on_s2n.len() != 2 * n && n > 0 {
         return Err(format!(
@@ -276,7 +262,7 @@ pub(crate) fn evaluate_all_lagrange_coeffs_ecfft_with_vanish(
     // Get coefficients of Z_S(X) using fftree_2n.exit().
     // Z_S(X) has degree N, so N+1 polynomial coefficients, so N+1 evaluations, so we need 2N tree
     // trees can only have power of two leaf-counts, so we require N and 2N tree, can't have N and N+1 tree
-    println!("  Step b: Computing coefficients of Z_S(X) using fftree_2n.exit()...");
+    println!("Computing coefficients of Z_S(X) using fftree_2n.exit()...");
     let mut z_s_coeffs_vec_from_exit = fftree_2n.exit(&z_s_evals_on_s2n);
 
     // Z_S(X) is monic of degree N. It has N+1 coefficients.
@@ -289,30 +275,20 @@ pub(crate) fn evaluate_all_lagrange_coeffs_ecfft_with_vanish(
         ));
     }
     z_s_coeffs_vec_from_exit.truncate(n + 1); // Keep only the N+1 coefficients for degree N poly
-    let z_s_coeffs = DensePolynomial::from_coefficients_vec(z_s_coeffs_vec_from_exit.clone());
 
-    if z_s_coeffs.degree() != n && n > 0 {
-        // Degree should be exactly N
-        return Err(format!(
-            "Vanishing polynomial Z_S(X) has degree {}, expected {}. Check for distinct domain points.",
-            z_s_coeffs.degree(),
-            n
-        ));
-    }
+    let vanishing_poly = DensePolynomial::from_coefficients_vec(z_s_coeffs_vec_from_exit);
 
-    // c. Evaluate Z_S(tau)
-    println!("  Step c: Evaluating Z_S(tau)...");
-    let z_s_at_tau = z_s_coeffs.evaluate(&tau);
-    if z_s_at_tau.is_zero() {
-        return Err(
-            "Z_S(tau) is zero, but tau was not found in domain_points. This implies an issue."
-                .to_string(),
-        );
-    }
+    Ok(vanishing_poly)
+}
 
+pub(crate) fn compute_barycentric_weights(
+    fftree_n: &FFTree<Fr>,
+    vanishing_poly: &DensePolynomial<Fr>,
+) -> Result<Vec<Fr>, String> {
+    let n = fftree_n.f.leaves().len();
     // d. Compute coefficients of the derivative Z'_S(X)
     println!("  Step d: Computing derivative Z'_S(X)...");
-    let z_s_prime_coeffs = derivative(&z_s_coeffs);
+    let z_s_prime_coeffs = derivative(vanishing_poly);
     if z_s_prime_coeffs.degree() != n - 1 {
         return Err(format!(
             "Derivative Z'_S(X) has degree {}, expected {}.",
@@ -343,52 +319,35 @@ pub(crate) fn evaluate_all_lagrange_coeffs_ecfft_with_vanish(
         return Err("Evaluation of Z_S_prime returned incorrect number of points.".to_string());
     }
 
-    // f. Compute L_{i,S}(tau) = Z_S(tau) / ( (tau - s_i) * Z'_S(s_i) )
-    println!("  Step f: Computing final Lagrange coefficients...");
-    let mut denominators: Vec<Fr> = Vec::with_capacity(n);
-    for i in 0..n {
-        let tau_minus_s_i = tau - domain_points_s[i];
-        if z_s_prime_evals_on_s[i].is_zero() {
+    for (i, z_s_prime_evals_on_s_i) in z_s_prime_evals_on_s.iter().enumerate().take(n) {
+        if z_s_prime_evals_on_s_i.is_zero() {
             // This implies a repeated root in S if domain_points_s were distinct,
             // or an issue with derivative calculation/evaluation.
             return Err(format!(
-                "Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.",
-                i, i, domain_points_s[i]
+                "Derivative of vanishing polynomial Z'_S(s_{i}) is zero; implies repeated roots or error.",
             ));
         }
-        denominators.push(tau_minus_s_i * z_s_prime_evals_on_s[i]);
     }
-    ark_ff::batch_inversion(&mut denominators);
 
-    let mut lagrange_coeffs: Vec<Fr> = Vec::with_capacity(n);
-    for denom_i in denominators.iter().take(n) {
-        lagrange_coeffs.push(z_s_at_tau * denom_i);
-    }
     ark_ff::batch_inversion(&mut z_s_prime_evals_on_s);
 
-    Ok(LagrangeEvals {
-        lagrange_coeffs,
-        z_s_coeffs_vec_from_exit,
-        z_s_prime_evals_on_s,
-    })
+    Ok(z_s_prime_evals_on_s)
 }
 
 /// Evaluates all Lagrange coefficients L_{i,S}(tau) for a domain S (leaves of fftree_n)
 /// at a given point tau. Uses fftree.vanish() and fftree.exit().
 /// Complexity: O(N log^2 N), potentially with larger constants due to 2N-sized tree ops.
-pub(crate) fn evaluate_lagrange_coeffs_using_precompute(
+pub(crate) fn compute_lagrange_basis_at_tau(
     fftree_n: &FFTree<Fr>, // FFTree (size 2*N required for vanishing polynomial)
+    z_s_coeffs: &DensePolynomial<Fr>,
     tau: Fr,
-    z_s_coeffs_vec_from_exit: Vec<Fr>,
-    z_s_prime_evals_on_s: &mut [Fr],
+    inv_z_s_prime_evals_on_s: &[Fr],
 ) -> Result<Vec<Fr>, String> {
     let n = fftree_n.f.leaves().len();
     assert!(n > 1 && n.is_power_of_two());
 
     let domain_points_s = fftree_n.f.leaves(); // Domain S, size N
     assert!(!domain_points_s.contains(&tau));
-
-    let z_s_coeffs = DensePolynomial::from_coefficients_vec(z_s_coeffs_vec_from_exit.clone());
 
     if z_s_coeffs.degree() != n && n > 0 {
         // Degree should be exactly N
@@ -400,7 +359,7 @@ pub(crate) fn evaluate_lagrange_coeffs_using_precompute(
     }
 
     // c. Evaluate Z_S(tau)
-    println!("  Step A: Evaluating Z_S(tau)...");
+    println!("Evaluating Z_S(tau)...");
     let z_s_at_tau = z_s_coeffs.evaluate(&tau);
     if z_s_at_tau.is_zero() {
         return Err(
@@ -409,31 +368,22 @@ pub(crate) fn evaluate_lagrange_coeffs_using_precompute(
         );
     }
 
-    ark_ff::batch_inversion(z_s_prime_evals_on_s);
-    if z_s_prime_evals_on_s.len() != n {
+    if inv_z_s_prime_evals_on_s.len() != n {
         return Err("Evaluation of Z_S_prime returned incorrect number of points.".to_string());
     }
 
     // f. Compute L_{i,S}(tau) = Z_S(tau) / ( (tau - s_i) * Z'_S(s_i) )
-    println!("  Step B: Computing final Lagrange coefficients...");
-    let mut denominators: Vec<Fr> = Vec::with_capacity(n);
-    for i in 0..n {
-        let tau_minus_s_i = tau - domain_points_s[i];
-        if z_s_prime_evals_on_s[i].is_zero() {
-            // This implies a repeated root in S if domain_points_s were distinct,
-            // or an issue with derivative calculation/evaluation.
-            return Err(format!(
-                "Derivative of vanishing polynomial Z'_S(s_{}) is zero at a domain point s_{}={}, implies repeated roots or error.",
-                i, i, domain_points_s[i]
-            ));
-        }
-        denominators.push(tau_minus_s_i * z_s_prime_evals_on_s[i]);
+    println!("Computing final Lagrange coefficients...");
+    let mut tau_minus_si: Vec<Fr> = Vec::with_capacity(n);
+    for domain_points_s_i in domain_points_s.iter().take(n) {
+        let tau_minus_s_i = tau - domain_points_s_i;
+        tau_minus_si.push(tau_minus_s_i);
     }
-    ark_ff::batch_inversion(&mut denominators);
+    ark_ff::batch_inversion(&mut tau_minus_si);
 
     let mut lagrange_coeffs: Vec<Fr> = Vec::with_capacity(n);
-    for denom in denominators.iter().take(n) {
-        lagrange_coeffs.push(z_s_at_tau * denom);
+    for i in 0..n {
+        lagrange_coeffs.push(z_s_at_tau * tau_minus_si[i] * inv_z_s_prime_evals_on_s[i]);
     }
 
     Ok(lagrange_coeffs)
@@ -454,7 +404,7 @@ fn derivative<F: Field>(p: &DensePolynomial<F>) -> DensePolynomial<F> {
 }
 
 /// Evaluate vanishing polynomial over some domain
-pub(crate) fn evaluate_vanishing_poly_over_domain(z_poly: &[Fr], treen: &FFTree<Fr>) -> Vec<Fr> {
+pub(crate) fn evaluate_vanishing_poly_at_domain(z_poly: &[Fr], treen: &FFTree<Fr>) -> Vec<Fr> {
     let treen_leaves = treen.f.leaves();
     // O(Nlog^n) cost to evaluate at leaves
     // N coefficients (N-1 degree polynomial) to begin with
@@ -468,45 +418,11 @@ pub(crate) fn evaluate_vanishing_poly_over_domain(z_poly: &[Fr], treen: &FFTree<
     tree_ev
 }
 
-// obtain L(tau) for unified domain DUD' using previously computed values of L(tau) for D and D'
-pub(crate) fn evaluate_lagrage_over_unified_domain(
-    tau: Fr,
-    treen: &FFTree<Fr>,
-    l_tau: &[Fr],
-    z_poly: &[Fr],
-    treend: &FFTree<Fr>,
-    l_tau2: &[Fr],
-    z_poly2: &[Fr],
-) -> Vec<Fr> {
-    let num_constraints = treen.f.leaves().len();
-
-    let mut z_poly_dom2 = evaluate_vanishing_poly_over_domain(z_poly, treend);
-    let mut z_poly2_dom = evaluate_vanishing_poly_over_domain(z_poly2, treen);
-
-    let z_poly_tau = (DensePolynomial {
-        coeffs: z_poly.to_vec(),
-    })
-    .evaluate(&tau);
-    let z_poly2_tau = (DensePolynomial {
-        coeffs: z_poly2.to_vec(),
-    })
-    .evaluate(&tau);
-
-    let mut lagrange_out: Vec<Fr> = vec![Fr::ZERO; 2 * num_constraints];
-
-    ark_ff::batch_inversion(&mut z_poly2_dom);
-    ark_ff::batch_inversion(&mut z_poly_dom2);
-    for i in 0..num_constraints {
-        lagrange_out[2 * i] = l_tau[i] * z_poly2_tau * z_poly2_dom[i];
-        lagrange_out[2 * i + 1] = l_tau2[i] * z_poly_tau * z_poly_dom2[i];
-    }
-    lagrange_out
-}
 
 #[allow(clippy::too_many_arguments)]
 // we additionally use vanishing polynomial evaluations `z_poly_dom2` and `z_poly2_dom`
 // for lesser compute cost
-pub(crate) fn evaluate_lagrage_over_unified_domain_with_precompute(
+pub(crate) fn compute_lagrange_basis_at_tau_over_unified_domain(
     tau: Fr,
     num_constraints: usize,
     l_tau: &[Fr],
@@ -734,11 +650,11 @@ mod ecfft_properties {
 mod test {
     use std::path::Path;
 
-    use super::{build_sect_ecfft_tree, evaluate_lagrange_coeffs_using_precompute};
+    use super::{build_sect_ecfft_tree, compute_lagrange_basis_at_tau};
     use crate::artifacts::TREE_2N;
     use crate::curve::Fr;
     use crate::ec_fft::{
-        evaluate_all_lagrange_coeffs_ecfft_with_vanish, evaluate_lagrage_over_unified_domain,
+        compute_barycentric_weights, compute_lagrange_basis_at_tau_over_unified_domain, evaluate_vanishing_poly_at_domain, compute_vanishing_polynomial
     };
     use crate::tree_io::{read_fftree_from_file, write_fftree_to_file};
 
@@ -752,7 +668,7 @@ mod test {
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
     #[test]
-    fn test_evaluate_all_lagrange_coeffs_ecfft_with_vanish() {
+    fn test_evaluate_lagrange_coeffs_using_precompute() {
         let n_log: u32 = 4; // Keep N small for faster FFTree builds in this example
         let n = 1 << n_log;
 
@@ -789,8 +705,17 @@ mod test {
             "\nEvaluating Lagrange coefficients at tau = {} (tau is NOT in domain S):",
             tau
         );
-        match evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree_2n, tau) {
-            Ok(res) => {
+
+        let vanishing_poly = compute_vanishing_polynomial(&fftree_2n).unwrap();
+        let barycentric_weight = compute_barycentric_weights(fftree_n, &vanishing_poly).unwrap();
+
+        match compute_lagrange_basis_at_tau(
+            fftree_n,
+            &vanishing_poly,
+            tau,
+            &barycentric_weight,
+        ) {
+            Ok(lagrange_basis_at_tau) => {
                 if n > 0 {
                     // Only verify if domain and coeffs are non-empty
                     let mut p_evals_on_s = Vec::with_capacity(n);
@@ -800,7 +725,7 @@ mod test {
 
                     let mut p_at_tau_reconstructed = Fr::zero();
                     for (i, p_evals_on_s_i) in p_evals_on_s.iter().enumerate().take(n) {
-                        p_at_tau_reconstructed += res.lagrange_coeffs[i] * p_evals_on_s_i;
+                        p_at_tau_reconstructed += lagrange_basis_at_tau[i] * p_evals_on_s_i;
                     }
 
                     let p_at_tau_direct = tau + Fr::from(7u32);
@@ -880,14 +805,22 @@ mod test {
         }
 
         // --- fast ECFFT implementation ------------------------------------
-        let res = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree2n, tau)
-            .expect("ECFFT routine failed");
+        let vanishing_poly = compute_vanishing_polynomial(&fftree2n).unwrap();
+        let barycentric_weight = compute_barycentric_weights(fftree, &vanishing_poly).unwrap();
+
+        let lagrange_basis_at_tau = compute_lagrange_basis_at_tau(
+            fftree,
+            &vanishing_poly,
+            tau,
+            &barycentric_weight,
+        )
+        .expect("ECFFT routine failed");
 
         // --- slow reference -----------------------------------------------
         let slow = lagrange_coeffs_reference(domain_s, tau);
 
-        assert_eq!(res.lagrange_coeffs.len(), slow.len());
-        for (i, (f, s)) in res.lagrange_coeffs.iter().zip(slow.iter()).enumerate() {
+        assert_eq!(lagrange_basis_at_tau.len(), slow.len());
+        for (i, (f, s)) in lagrange_basis_at_tau.iter().zip(slow.iter()).enumerate() {
             assert_eq!(f, s, "Mismatch at index {i}:  fast = {f},  slow = {s}");
         }
     }
@@ -896,18 +829,14 @@ mod test {
     fn test_vanishing_poly() {
         let n_log = 4u32; //  N = 16   (fits in a few ms)
         let n = 1 << n_log;
-        let mut rng = thread_rng();
-        let tau = Fr::rand(&mut rng);
 
         let fftree_2n = build_sect_ecfft_tree(n * 2, false, n_log as usize + 1, false)
             .expect("cannot build FFTree");
-        let ec_vpoly = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree_2n, tau)
-            .unwrap()
-            .z_s_coeffs_vec_from_exit;
-        let vanishing_poly = DensePolynomial { coeffs: ec_vpoly };
-
         let fftree_n = build_sect_ecfft_tree(n, false, n_log as usize + 1, false)
             .expect("cannot build FFTree");
+
+        let vanishing_poly = compute_vanishing_polynomial(&fftree_2n).unwrap();
+
         let domain_s = fftree_n.f.leaves(); // &[F; N]
 
         /// Compute vanishing polynomial z(X) = product(X - r_i) for the domain.
@@ -1041,10 +970,11 @@ mod test {
         let domain_sd = fftree2n.subtree_with_size(n).f.leaves();
         assert_eq!(domain_s, domain_sd);
 
-        let fast = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree2n, tau)
-            .expect("ECFFT routine failed")
-            .lagrange_coeffs;
-
+        let vpoly = compute_vanishing_polynomial(&fftree2n).unwrap();
+        let fftreen = fftree2n.subtree_with_size(n);
+        let bar_wts = compute_barycentric_weights(fftreen, &vpoly).unwrap();
+        let fast = compute_lagrange_basis_at_tau(fftreen, &vpoly, tau, &bar_wts)
+            .expect("ECFFT routine failed");
         // // --- slow reference -----------------------------------------------
         let slow = lagrange_coeffs_reference(domain_sd, tau);
 
@@ -1071,22 +1001,33 @@ mod test {
             build_sect_ecfft_tree(num_constraints * 2 * 2, false, n_log as usize + 1, false)
                 .unwrap();
 
-        let tmp = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&tree2n, tau).unwrap();
-        let (l_tau, z_poly) = (tmp.lagrange_coeffs, tmp.z_s_coeffs_vec_from_exit);
-        let tmp = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&tree2nd, tau).unwrap();
-        let (l_tau2, z_poly2) = (tmp.lagrange_coeffs, tmp.z_s_coeffs_vec_from_exit);
-        let l_tau_ref = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&tree4n, tau)
-            .unwrap()
-            .lagrange_coeffs;
+        let z_poly = compute_vanishing_polynomial(&tree2n).unwrap();
+        let treen = tree2n.subtree_with_size(num_constraints);
+        let bar_wts = compute_barycentric_weights(treen, &z_poly).unwrap();
+        let l_tau =
+            compute_lagrange_basis_at_tau(treen, &z_poly, tau, &bar_wts).unwrap();
 
-        let lagrange_out = evaluate_lagrage_over_unified_domain(
-            tau,
-            tree2n.subtree_with_size(num_constraints),
-            &l_tau,
-            &z_poly,
-            tree2nd.subtree_with_size(num_constraints),
-            &l_tau2,
-            &z_poly2,
+        let z_poly2 = compute_vanishing_polynomial(&tree2nd).unwrap();
+        let treend = tree2nd.subtree_with_size(num_constraints);
+        let bar_wts2 = compute_barycentric_weights(treend, &z_poly2).unwrap();
+        let l_tau2 =
+            compute_lagrange_basis_at_tau(treend, &z_poly2, tau, &bar_wts2).unwrap();
+
+        let z_polyl = compute_vanishing_polynomial(&tree4n).unwrap();
+        let bar_wtsl = compute_barycentric_weights(&tree2n, &z_polyl).unwrap();
+
+        let l_tau_ref =
+            compute_lagrange_basis_at_tau(&tree2n, &z_polyl, tau, &bar_wtsl).unwrap();
+
+        let mut z_poly_dom2 = evaluate_vanishing_poly_at_domain(&z_poly, treend);
+        ark_ff::batch_inversion(&mut z_poly_dom2);
+    
+        let mut z_poly2_dom = evaluate_vanishing_poly_at_domain(&z_poly2, treen);
+        ark_ff::batch_inversion(&mut z_poly2_dom);
+
+        
+        let lagrange_out = compute_lagrange_basis_at_tau_over_unified_domain(
+            tau, num_constraints, &l_tau, &l_tau2, &z_poly, &z_poly2, &z_poly_dom2, &z_poly2_dom
         );
 
         assert_eq!(l_tau_ref, lagrange_out);
@@ -1119,41 +1060,48 @@ mod test {
     }
 
     #[test]
-    fn test_evaluate_lagrange_coeffs_using_precompute() {
+    fn test_evaluate_lagrange_coeffs_using_precompute2() {
         let n_log: usize = 6;
         let domain_len = 1 << n_log;
         let fftree_2n = build_sect_ecfft_tree(domain_len, false, n_log + 1, false).unwrap();
         let mut rng = thread_rng();
         let tau = Fr::rand(&mut rng);
 
-        let tmp = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree_2n, tau).unwrap();
-        let (lag_coeff, z_s_coeffs_vec_from_exit, z_s_prime_evals_on_s) = (
-            tmp.lagrange_coeffs,
-            tmp.z_s_coeffs_vec_from_exit,
-            tmp.z_s_prime_evals_on_s,
-        );
-
+        let z_poly = compute_vanishing_polynomial(&fftree_2n).unwrap();
         let fftree_n = fftree_2n.subtree_with_size(domain_len / 2);
-        let lag_coeff2 = evaluate_lagrange_coeffs_using_precompute(
+        let z_s_prime_evals_on_s = compute_barycentric_weights(fftree_n, &z_poly).unwrap();
+        let lag_coeff = compute_lagrange_basis_at_tau(
             fftree_n,
+            &z_poly,
             tau,
-            z_s_coeffs_vec_from_exit.clone(),
-            &mut z_s_prime_evals_on_s.clone(),
+            &z_s_prime_evals_on_s,
+        )
+        .unwrap();
+
+        let lag_coeff2 = compute_lagrange_basis_at_tau(
+            fftree_n,
+            &z_poly,
+            tau,
+            &z_s_prime_evals_on_s,
         )
         .unwrap();
         assert_eq!(lag_coeff, lag_coeff2);
         let delta = Fr::rand(&mut rng);
-        let lag_coeff3 = evaluate_lagrange_coeffs_using_precompute(
+        let lag_coeff3 = compute_lagrange_basis_at_tau(
             fftree_n,
+            &z_poly,
             delta,
-            z_s_coeffs_vec_from_exit.clone(),
-            &mut z_s_prime_evals_on_s.clone(),
+            &z_s_prime_evals_on_s,
         )
         .unwrap();
 
-        let lag_coeff4 = evaluate_all_lagrange_coeffs_ecfft_with_vanish(&fftree_2n, delta)
-            .unwrap()
-            .lagrange_coeffs;
+        let lag_coeff4 = compute_lagrange_basis_at_tau(
+            fftree_n,
+            &z_poly,
+            delta,
+            &z_s_prime_evals_on_s,
+        )
+        .unwrap();
         assert_eq!(lag_coeff3, lag_coeff4);
     }
 

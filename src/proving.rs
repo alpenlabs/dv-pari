@@ -195,7 +195,7 @@ impl Transcript {
 }
 
 /// Prover `Precomputes` received from third party that would have otherwise taken long to compute oneself.
-// Computes fields like tree2n_fast, barycentric_weights that are easy enough to compute
+// Computes fields like tree2n, barycentric_weights that are easy enough to compute
 /// Contains data precomputed by the prover to accelerate proof generation.
 ///
 /// These objects depend only on the cryptographic domain and can be reused
