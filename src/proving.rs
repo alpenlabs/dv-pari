@@ -197,7 +197,7 @@ impl Transcript {
 }
 
 /// Prover `Precomputes` received from third party that would have otherwise taken long to compute oneself.
-/// 
+///
 /// Fields
 ///     # cache_dir: path prover references to read and write data
 ///     # validate_precompute: whether prover trusts the provider or he wants to validate the data despite the precomputed content having the claimed shasum
