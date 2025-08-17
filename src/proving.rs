@@ -152,6 +152,7 @@ impl Transcript {
             for pubin in public_inputs {
                 let pubin_uint: BigUint = pubin.into_bigint().into();
                 let mut bytes = pubin_uint.to_bytes_le();
+                bytes.resize(232/8, 0);
                 buf.append(&mut bytes);
             }
             let buf_hash = blake3::hash(&buf);
