@@ -14,7 +14,7 @@ use crate::gnark_r1cs::{
     R1CSInstance, Row, evaluate_monomial_basis_poly, load_sparse_r1cs_from_file,
 };
 use crate::io_utils::{
-    read_fr_vec_from_file, read_point_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file,
+    read_fr_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file,
 };
 use crate::proving::{Proof, Transcript};
 use crate::tree_io::{read_fftree_from_file, write_fftree_to_file};
@@ -108,32 +108,6 @@ struct SRSMatrices {
     g_k: [Vec<CurvePoint>; 3],
 }
 
-// --- Helper Function to Abstract File I/O and Computation ---
-// This function handles the common pattern of reading data from a file if it exists,
-// or computing it, writing it to the file, and then returning it.
-
-/// Reads a vector of `CurvePoint` from `file_path` if it exists; otherwise
-/// computes it via `compute_fn`, stores it, and returns the freshly computed
-/// value. This removes a lot of repetitive I/O boilerplate.
-fn compute_or_read_vec<F>(file_path: impl AsRef<Path>, compute_fn: F) -> Result<Vec<CurvePoint>>
-where
-    F: FnOnce() -> Result<Vec<CurvePoint>>, // computation may fail too
-{
-    let file_path = file_path.as_ref();
-
-    if file_path.exists() {
-        println!("Reading {:?} …", file_path.display());
-        read_point_vec_from_file(file_path)
-            .with_context(|| format!("reading {:?}", file_path.display()))
-    } else {
-        println!("Computing {:?} …", file_path.display());
-        let result = compute_fn()?;
-        write_point_vec_to_file(file_path, &result)
-            .with_context(|| format!("writing {:?}", file_path.display()))?;
-        Ok(result)
-    }
-}
-
 /// Builds the SRS matrices required by the verifier.  All intermediate artefacts
 /// are cached on disk under `cache_dir` so that subsequent runs can skip
 /// expensive recomputation.
@@ -151,24 +125,24 @@ fn compute_srs_matrices(
     let delta2 = delta.square();
 
     // g_m -------------------------------------------------------------------
-    let g_m = compute_or_read_vec(cache_dir.join(SRS_G_M), || {
+    let g_m: Vec<CurvePoint> = {
         let m_vals = accumulate_m_values(&inst.rows, &inst.coeffs, l_tau, delta);
-        Ok(m_vals
+        m_vals
             .into_par_iter()
             .map(|val| point_scalar_mul_gen(val * secrets.epsilon))
-            .collect())
-    })?;
+            .collect()
+    };
+    write_point_vec_to_file(cache_dir.join(SRS_G_M), &g_m)?;
 
     // g_q -------------------------------------------------------------------
-    let g_q = compute_or_read_vec(cache_dir.join(SRS_G_Q), || {
-        Ok((0..inst.num_constraints)
-            .into_par_iter()
-            .map(|i| {
-                let scalar = z_tau * delta2 * l_taud[i] * secrets.epsilon;
-                point_scalar_mul_gen(scalar)
-            })
-            .collect())
-    })?;
+    let g_q: Vec<CurvePoint> = (0..inst.num_constraints)
+        .into_par_iter()
+        .map(|i| {
+            let scalar = z_tau * delta2 * l_taud[i] * secrets.epsilon;
+            point_scalar_mul_gen(scalar)
+        })
+        .collect();
+    write_point_vec_to_file(cache_dir.join(SRS_G_Q), &g_q)?;
 
     // g_k vectors ------------------------------------------------------------
     let delta_pows = [Fr::one(), delta, delta2];
@@ -178,12 +152,11 @@ fn compute_srs_matrices(
         let path = cache_dir.join(SRS_GK[j]);
         let l_slice = if j < 2 { l_tau } else { l_taul };
 
-        *g_k = compute_or_read_vec(path, || {
-            Ok(l_slice
-                .into_par_iter()
-                .map(|l_val| point_scalar_mul_gen(*l_val * delta_pows[j]))
-                .collect())
-        })?;
+        *g_k = l_slice
+            .into_par_iter()
+            .map(|l_val| point_scalar_mul_gen(*l_val * delta_pows[j]))
+            .collect();
+        write_point_vec_to_file(path, g_k)?;
     }
 
     Ok(SRSMatrices {
