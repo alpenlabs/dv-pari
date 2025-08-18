@@ -113,7 +113,7 @@ fn compute_srs_matrices(
     cache_dir: &Path,
     secrets: &Trapdoor,
     z_poly_ark: &DensePolynomial<Fr>,
-    inst: &R1CSInstance,
+    inst: &mut R1CSInstance, // mutable to free up once used
     l_tau: &[Fr],
     l_taud: &[Fr],
     l_taul: &[Fr],
@@ -125,6 +125,8 @@ fn compute_srs_matrices(
     // g_m -------------------------------------------------------------------
     let g_m: Vec<CurvePoint> = {
         let m_vals = accumulate_m_values(&inst.rows, &inst.coeffs, l_tau, delta);
+        inst.rows.clear();
+        inst.coeffs.clear();
         m_vals
             .into_par_iter()
             .map(|val| point_scalar_mul_gen(val * secrets.epsilon))
@@ -182,10 +184,13 @@ impl SRS {
         std::fs::create_dir_all(cache_dir) // ensure directory exists
             .with_context(|| format!("creating {}", cache_dir.display()))?;
 
-        let dump =
-            load_sparse_r1cs_from_file(File::open(cache_dir.join(R1CS_CONSTRAINTS_FILE)).unwrap())
-                .unwrap();
-        let mut inst = R1CSInstance::from_dump(dump.clone(), num_public_inputs);
+        let mut inst = {
+            let dump = load_sparse_r1cs_from_file(
+                File::open(cache_dir.join(R1CS_CONSTRAINTS_FILE)).unwrap(),
+            )
+            .unwrap();
+            R1CSInstance::from_dump(dump.clone(), num_public_inputs)
+        };
 
         let num_constraints = inst.num_constraints;
         let n_log = num_constraints.ilog2() as usize;
@@ -283,15 +288,12 @@ impl SRS {
 
         let (mut treen, l_tau, z_poly) =
             init_tree_and_poly_at_tau(TREE_2N, TREE_N, Z_POLY, BAR_WTS, false)?;
+
+        // drop treen to save memory, will read from file in a couple of steps
+        clear_fftree(&mut treen);
+
         let (mut treend, l_taud, z_polyd) =
             init_tree_and_poly_at_tau(TREE_2ND, TREE_ND, Z_POLYD, BAR_WTSD, true)?;
-
-        println!("r1cs update_to_include_vandermode_matrix_d");
-        R1CSInstance::update_to_include_vandermode_matrix_d(
-            &mut inst,
-            treen.f.leaves(),
-            num_public_inputs,
-        );
 
         // Pre‑compute domain vanishing polynomials and their inverses ---------
         let prepare_z_inv =
@@ -311,6 +313,22 @@ impl SRS {
         println!("computing evaluations of vanishing polynomial on other domain");
         let mut z_vals2_inv = prepare_z_inv(Z_VALS2_INV, &z_poly, &treend)?;
         clear_fftree(&mut treend);
+
+        // rebuild tree now that some space has been freed
+        treen = if is_fresh_setup {
+            let tree = load_tree(TREE_2N, false, num_constraints * 2).unwrap();
+            let tree: FFTree<Fr> = tree.subtree_with_size(num_constraints).clone();
+            tree
+        } else {
+            load_tree(TREE_N, false, num_constraints).unwrap()
+        };
+
+        println!("r1cs update_to_include_vandermode_matrix_d");
+        R1CSInstance::update_to_include_vandermode_matrix_d(
+            &mut inst,
+            treen.f.leaves(),
+            num_public_inputs,
+        );
 
         let mut z_vals2d_inv = prepare_z_inv(Z_VALS2D_INV, &z_polyd, &treen)?;
         clear_fftree(&mut treen);
@@ -332,7 +350,7 @@ impl SRS {
 
         println!("compute_srs_matrices");
         let srs_mats = compute_srs_matrices(
-            cache_dir, &trapdoor, &z_poly, &inst, &l_tau, &l_taud, &l_taul,
+            cache_dir, &trapdoor, &z_poly, &mut inst, &l_tau, &l_taud, &l_taul,
         )?;
 
         Ok(Self {
