@@ -2,16 +2,13 @@
 name = "dv-pari" 
 version = "0.1.0" 
 edition = "2024" 
-authors = [
-  "John Doe <noreply@alpenlabs.io>",  # CHANGEME
-  "Janet Doe <noreply@alpenlabs.io>", # CHANGEME
-]
+authors = []
 description = "Rust implementation of the DV-Pari SNARK over sect233k1"
-license = "MIT OR Apache-2.0" # CHANGEME
+license = "MIT OR Apache-2.0" 
 readme = "README.md"
-repository = "https://github.com/alpenlabs/rust-template" # CHANGEME
-categories = ["cryptography::cryptocurrencies"] # CHANGEME
-keywords = ["crypto", "bitcoin"] # CHANGEME
+repository = "https://github.com/alpenlabs/dv-pari" 
+categories = ["cryptography::cryptocurrencies"] 
+keywords = ["crypto", "bitcoin", "glock"] 
 
 [lints]
 rust.missing_debug_implementations = "warn"
