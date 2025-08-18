@@ -13,9 +13,7 @@ use crate::ec_fft::{
 use crate::gnark_r1cs::{
     R1CSInstance, Row, evaluate_monomial_basis_poly, load_sparse_r1cs_from_file,
 };
-use crate::io_utils::{
-    read_fr_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file,
-};
+use crate::io_utils::{read_fr_vec_from_file, write_fr_vec_to_file, write_point_vec_to_file};
 use crate::proving::{Proof, Transcript};
 use crate::tree_io::{read_fftree_from_file, write_fftree_to_file};
 use anyhow::{Context, Result};
