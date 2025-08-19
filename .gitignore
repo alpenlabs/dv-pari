@@ -91,3 +91,6 @@ coverage.xml
 
 # backup files
 *.bak
+
+# cached files for dv-pari
+srs*/

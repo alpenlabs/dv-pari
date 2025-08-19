@@ -1,17 +1,14 @@
 [package]
-name = "alpen-rust-template" # CHANGEME
-version = "0.0.0" # CHANGEME
-edition = "2024" # CHANGEME
-authors = [
-  "John Doe <noreply@alpenlabs.io>",  # CHANGEME
-  "Janet Doe <noreply@alpenlabs.io>", # CHANGEME
-]
-description = "Alpen Rust Template" # CHANGEME
-license = "MIT OR Apache-2.0" # CHANGEME
+name = "dv-pari" 
+version = "0.1.0" 
+edition = "2024" 
+authors = []
+description = "Rust implementation of the DV-Pari SNARK over sect233k1"
+license = "MIT OR Apache-2.0" 
 readme = "README.md"
-repository = "https://github.com/alpenlabs/rust-template" # CHANGEME
-categories = ["cryptography::cryptocurrencies"] # CHANGEME
-keywords = ["crypto", "bitcoin"] # CHANGEME
+repository = "https://github.com/alpenlabs/dv-pari" 
+categories = ["cryptography::cryptocurrencies"] 
+keywords = ["crypto", "bitcoin", "glock"] 
 
 [lints]
 rust.missing_debug_implementations = "warn"
@@ -29,8 +26,21 @@ clippy.too_long_first_doc_paragraph = "warn"
 [features]
 
 [dependencies]
+ark-std = { version = "0.5.0", default-features = false, features = ["print-trace"] }
+ark-serialize = { version = "0.5.0", features = ["parallel"] }
+ark-poly = { version = "0.5.0", features = ["parallel"] }
+ark-ff = { version = "0.5.0", features = ["parallel"] }
+num-bigint = "0.4.6"
+byteorder = "1.5.0"
+anyhow = "1.0"
+rayon = "1.10.0" 
+memmap2 = "0.9.5"
+xs233-sys = "=0.2.0"
+ecfft = { git = "https://github.com/alpenlabs/ecfft", rev = "9c6cac7" }
+blake3 = "1.8.0"
 
 [dev-dependencies]
+rand_chacha = "0.3.1"
 
 [profile.release]
 opt-level = "z"   # Optimized for size, use 3 for speed

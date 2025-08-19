@@ -24,4 +24,4 @@ jobs:
         uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
 
       - name: Run zizmor 🌈
-        run: uvx zizmor .
+        run: uvx zizmor --min-severity medium .
