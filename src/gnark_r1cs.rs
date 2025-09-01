@@ -211,7 +211,7 @@ pub(crate) fn gnark_element_to_fr(e: &Element) -> Fr {
 }
 
 /// generate sp1 public input scalar field element for given raw public input
-pub fn sp1_generate_scalar_from_raw_public_input(raw_pub_input: u64) -> Fr {
+pub fn sp1_generate_scalar_from_raw_public_input(raw_pub_input_bytes: &[u8]) -> Fr {
     fn babybear_bytes_to_bn254(bytes: &[u8; 32]) -> BigUint {
         let mut result = BigUint::ZERO;
         for (idx, byte) in bytes.iter().enumerate() {
@@ -222,7 +222,7 @@ pub fn sp1_generate_scalar_from_raw_public_input(raw_pub_input: u64) -> Fr {
         result
     }
     let mut hasher = Hasher::new();
-    hasher.update(&raw_pub_input.to_le_bytes());
+    hasher.update(raw_pub_input_bytes);
     let res = hasher.finalize();
     let pubinp_fr = babybear_bytes_to_bn254(res.as_bytes()); // hashed and truncated to 224 bits
     Fr::from(pubinp_fr)
@@ -494,9 +494,8 @@ mod test {
     #[test]
     #[ignore]
     fn test_public_inputs_hash() {
-        let fibo_input = [55, 0, 0, 0, 89, 0, 0, 0]; // serialized 10th fibonacci sequence
-        let raw_pub_input = u64::from_le_bytes(fibo_input);
-        let res_fr = sp1_generate_scalar_from_raw_public_input(raw_pub_input);
+        let fibo_input: [u8; 8] = [55, 0, 0, 0, 89, 0, 0, 0]; // serialized 10th fibonacci sequence
+        let res_fr = sp1_generate_scalar_from_raw_public_input(fibo_input.as_slice());
 
         let wit_fr: Vec<Fr> = load_witness_from_file(&format!("srs_secu/{R1CS_WITNESS_FILE}"));
         assert_eq!(res_fr, wit_fr[2]); // should be equal to the witness that is expected by R1CS
