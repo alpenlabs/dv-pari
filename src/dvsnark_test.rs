@@ -10,8 +10,13 @@
 mod tests {
 
     use crate::artifacts::{R1CS_CONSTRAINTS_FILE, R1CS_WITNESS_FILE};
-    use crate::curve::Fr;
+    use crate::curve::{Fr, point_scalar_mul_gen};
     use crate::proving::{Proof, prover_prepares_precomputes};
+    use crate::srs_proof::{
+        TrapdoorBlindingFactors, srsprover_computes_challenge_response,
+        srsprover_computes_commitments, srsverifier_commits_to_witness,
+        srsverifier_verifies_commitment,
+    };
     use anyhow::Context;
     use ark_ff::Field;
     use ark_std::vec::Vec;
@@ -144,7 +149,7 @@ mod tests {
 
         // public and private inputs
         let public_inputs: Vec<Fr> = vec![o, w];
-        let witness = vec![y, z, x, t, s];
+        let private_inputs = vec![y, z, x, t, s];
 
         let mut rng = ChaCha20Rng::seed_from_u64(43);
         let trapdoor = Trapdoor {
@@ -168,7 +173,11 @@ mod tests {
         prover_prepares_precomputes("srs_verifier_small_tmp", true).unwrap();
 
         // Prover generates proof
-        let proof = Proof::prove("srs_verifier_small_tmp", public_inputs.clone(), &witness);
+        let proof = Proof::prove(
+            "srs_verifier_small_tmp",
+            public_inputs.clone(),
+            &private_inputs,
+        );
 
         // Designated verifier verifies proof
         let public_inputs: Vec<Fr> = vec![o, w];
@@ -177,6 +186,78 @@ mod tests {
             result,
             "Verification should succeed for valid multi-constraint witness"
         );
+    }
+
+    #[test]
+    fn test_dvsnark_srs_proof() {
+        let cache_dir = "srs_verifier_small_tmp";
+
+        create_five_constraint_dump_on_a_file(Path::new(cache_dir));
+
+        // witness that satisfies constraints
+        let x = Fr::from(3u64);
+        let y = x * x; // x^2 = 9
+        let z = Fr::from(4u64);
+        let w = y + z; // 9 + 4 = 13
+        let t = z + z; // 2*z = 8
+        let s = x + t; // 3 + 8 = 11
+        let o = w + s; // 13 + 11 = 24
+
+        // public and private inputs
+
+        let num_public_inputs = 2;
+
+        let mut rng = ChaCha20Rng::seed_from_u64(43);
+        let trapdoor = Trapdoor {
+            tau: Fr::rand(&mut rng),
+            delta: Fr::rand(&mut rng),
+            epsilon: Fr::rand(&mut rng),
+        };
+
+        // Run SRS setup assuming nothing is precomputed
+        let _ = SRS::verifier_runs_setup(
+            trapdoor,
+            Path::new(cache_dir),
+            num_public_inputs,
+            true,
+            true,
+        )
+        .unwrap();
+
+        // Prover precomputes stuff he needs for proving
+        // These precomputes can be reused for different proof generations
+        prover_prepares_precomputes("srs_verifier_small_tmp", true).unwrap();
+
+        let assignment = vec![Fr::ONE, o, w, y, z, x, t, s];
+
+        let (proof, proof_alpha) =
+            srsverifier_commits_to_witness(cache_dir, &assignment, num_public_inputs);
+
+        let trapdoor_bf = TrapdoorBlindingFactors {
+            bf_tau: Fr::rand(&mut rng),
+            bf_delta: Fr::rand(&mut rng),
+            bf_epsilon: Fr::rand(&mut rng),
+        };
+
+        let gen_h = point_scalar_mul_gen(Fr::rand(&mut rng));
+
+        let srs_commits =
+            srsprover_computes_commitments(trapdoor, trapdoor_bf, proof, proof_alpha, gen_h);
+
+        let sigma_challenge = Fr::rand(&mut rng);
+
+        let sigma_challenge_response =
+            srsprover_computes_challenge_response(sigma_challenge, trapdoor, trapdoor_bf);
+
+        let passes = srsverifier_verifies_commitment(
+            sigma_challenge,
+            sigma_challenge_response,
+            gen_h,
+            srs_commits,
+            proof,
+            proof_alpha,
+        );
+        assert!(passes, "srs verifier passes");
     }
 
     #[test]

@@ -81,6 +81,10 @@ impl CurvePoint {
         unsafe { CurvePoint(xsk233_generator) }
     }
 
+    pub(crate) fn identity() -> Self {
+        unsafe { CurvePoint(xsk233_neutral) }
+    }
+
     pub(crate) fn add(a: CurvePoint, b: CurvePoint) -> Self {
         unsafe {
             let mut p3 = xsk233_neutral;

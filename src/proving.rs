@@ -37,7 +37,7 @@ use crate::gnark_r1cs::{R1CSInstance, evaluate_monomial_basis_poly};
 ///
 /// We require the proof to be of small size, so we represent the data in compressed form
 /// Total Size = 2 * (Compressed Curve Point) 30 bytes + 3 * (Scalr Field ELement) 29 bytes = 147 bytes
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Proof {
     /// commit_p
     pub commit_p: CompressedCurvePoint,

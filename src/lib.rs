@@ -11,4 +11,4 @@ pub mod gnark_r1cs;
 
 pub mod proving;
 pub mod srs;
-mod srs_proof;
+pub(crate) mod srs_proof;

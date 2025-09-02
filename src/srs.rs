@@ -409,6 +409,7 @@ impl SRS {
             transcript.output()
         };
 
+        println!("challenge {}", fs_challenge_alpha);
         let i0 = evaluate_monomial_basis_poly(public_inputs, fs_challenge_alpha);
 
         let (proof_a0, is_a0_valid) = proof.a0.to_fr();
