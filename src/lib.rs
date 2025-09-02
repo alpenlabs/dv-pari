@@ -11,3 +11,4 @@ pub mod gnark_r1cs;
 
 pub mod proving;
 pub mod srs;
+mod srs_proof;
