@@ -54,7 +54,7 @@ SRSProver samples $r_\tau, r_\delta, r_\epsilon $. Let $\hat{x}(Y)$ = $r_x + Y x
 
 Define $R_0, R_1$ and $R_2$ by grouping terms
 
-$R_0 + R_1 Y + R_2 Y^2 = Y^2 P - \big( (a Y + b \hat{\delta}(Y)) \hat{\epsilon}(Y) \big) G - (\hat{\tau}(Y) - \alpha Y) \hat{\epsilon}(Y) K$
+$R_0 + R_1 Y + R_2 Y^2 = Y^2 P - \big( (a Y + b \hat{\delta}(Y) + r \hat{\delta^2}(Y)) \hat{\epsilon}(Y) \big) G - (\hat{\tau}(Y) - \alpha Y) \hat{\epsilon}(Y) K$
 
 SRSProver sends $R_0, R_1, R_2, R_\tau = r_\tau H,R_\delta = r_\delta H,R_\epsilon = r_\epsilon H $
 
